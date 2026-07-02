@@ -1,4 +1,4 @@
-const CACHE_NAME = 'minpao-v6'; // ⬅️ subido de v5 a v6: fuerza a todos los celulares a bajar la versión con modo voz
+const CACHE_NAME = 'minpao-v7'; // ⬅️ subir este número CADA VEZ que cambie voz.js o cualquier asset, si no el Service Worker sigue sirviendo la versión vieja desde caché
 const ASSETS = [
   './',
   './index.html',

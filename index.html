@@ -1426,7 +1426,24 @@ body.es-admin .solo-admin.flex{display:flex !important;}
           <label>Turno</label>
           <input type="text" id="m-turno" value="Mañana"/>
         </div>
-        <div class="field"><label>Franja horaria</label><input type="text" id="m-franja" value="5:45 am - 1:45 pm"/></div>
+        <div class="field"><label>Franja horaria</label>
+          <select id="m-franja">
+            <option value="08:00 am - 09:00 am">08:00 am - 09:00 am</option>
+            <option value="09:00 am - 10:00 am">09:00 am - 10:00 am</option>
+            <option value="10:00 am - 11:00 am" selected>10:00 am - 11:00 am</option>
+            <option value="11:00 am - 12:00 pm">11:00 am - 12:00 pm</option>
+            <option value="12:00 pm - 01:00 pm">12:00 pm - 01:00 pm</option>
+            <option value="01:00 pm - 02:00 pm">01:00 pm - 02:00 pm</option>
+            <option value="02:00 pm - 03:00 pm">02:00 pm - 03:00 pm</option>
+            <option value="03:00 pm - 04:00 pm">03:00 pm - 04:00 pm</option>
+            <option value="04:00 pm - 05:00 pm">04:00 pm - 05:00 pm</option>
+            <option value="05:00 pm - 06:00 pm">05:00 pm - 06:00 pm</option>
+            <option value="06:00 pm - 07:00 pm">06:00 pm - 07:00 pm</option>
+            <option value="07:00 pm - 08:00 pm">07:00 pm - 08:00 pm</option>
+            <option value="08:00 pm - 09:00 pm">08:00 pm - 09:00 pm</option>
+            <option value="09:00 pm - 10:00 pm">09:00 pm - 10:00 pm</option>
+          </select>
+        </div>
         <div class="field">
           <label>Zona</label>
           <select id="m-zona">
@@ -5057,7 +5074,7 @@ function verificarCOVDia(){
 function abrirModalCOV(closeable=true){
   const cov = cargarCOV() || {};
   document.getElementById('m-turno').value    = cov.turno    || 'Mañana';
-  document.getElementById('m-franja').value   = cov.franja   || '5:45 am - 1:45 pm';
+  document.getElementById('m-franja').value   = cov.franja   || '10:00 am - 11:00 am';
   document.getElementById('m-paradero').value = cov.paradero || '';
   const zs = document.getElementById('m-zona');
   if(cov.zona) for(let i=0;i<zs.options.length;i++) if(zs.options[i].value===cov.zona) zs.selectedIndex=i;
