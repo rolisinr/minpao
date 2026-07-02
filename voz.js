@@ -18,13 +18,16 @@
 const IDIOMA_VOZ = 'es-PE';
 
 /* ── Sinónimos aceptados por cada nivel de ocupación ── */
+/* ── Ocupación SOLO por "código 1" a "código 6".
+   Se quitaron los sinónimos de palabras (lleno, completo, etc.)
+   a pedido del uso en campo: solo los códigos numéricos. ── */
 const SINONIMOS_OCUPACION = {
-  FULL:     ['no entra nadie', 'repleto', 'full', 'lleno', 'codigo 6'],
-  PARADO:   ['hay parados', 'de pie', 'parados', 'parado', 'codigo 5'],
-  COMPLETO: ['asientos llenos', 'todos sentados', 'completo', 'codigo 4'],
-  SENTADO:  ['asientos ocupados', 'sentados', 'sentado', 'codigo 3'],
-  MEDIO:    ['medio vacío', 'medio vacio', 'casi vacío', 'casi vacio', 'mitad', 'medio', 'codigo 2'],
-  VACIO:    ['sin gente', 'vacío', 'vacio', 'nadie', 'codigo 1'],
+  VACIO:    ['codigo 1'],
+  MEDIO:    ['codigo 2'],
+  SENTADO:  ['codigo 3'],
+  COMPLETO: ['codigo 4'],
+  PARADO:   ['codigo 5'],
+  FULL:     ['codigo 6'],
 };
 const PARES_OCUPACION = Object.entries(SINONIMOS_OCUPACION)
   .flatMap(([cat, frases]) => frases.map(f => [cat, f]))
@@ -76,14 +79,41 @@ const DECENAS_NUM = {
   treinta:30, cuarenta:40, cincuenta:50, sesenta:60,
   setenta:70, ochenta:80, noventa:90,
 };
+const CENTENAS_NUM = {
+  cien:100, ciento:100, doscientos:200, trescientos:300,
+  cuatrocientos:400, quinientos:500, seiscientos:600,
+  setecientos:700, ochocientos:800, novecientos:900,
+};
 
 function palabrasANumeros(textoNorm) {
-  // Primero compuestos "treinta y cinco" → 35
-  let t = textoNorm.replace(
+  let t = textoNorm;
+
+  // Centenas compuestas: "trescientos treinta y seis" → 336, "trescientos cinco" → 305
+  t = t.replace(
+    /\b(cien|ciento|doscientos|trescientos|cuatrocientos|quinientos|seiscientos|setecientos|ochocientos|novecientos)\s+(treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa)\s+y\s+(un|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve)\b/g,
+    (m, cen, dec, uni) => String(CENTENAS_NUM[cen] + DECENAS_NUM[dec] + UNIDADES_NUM[uni])
+  );
+  // Centena + unidad: "trescientos cinco" → 305
+  t = t.replace(
+    /\b(cien|ciento|doscientos|trescientos|cuatrocientos|quinientos|seiscientos|setecientos|ochocientos|novecientos)\s+(un|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve)\b/g,
+    (m, cen, uni) => String(CENTENAS_NUM[cen] + UNIDADES_NUM[uni])
+  );
+  // Centena + decena: "trescientos treinta" → 330
+  t = t.replace(
+    /\b(cien|ciento|doscientos|trescientos|cuatrocientos|quinientos|seiscientos|setecientos|ochocientos|novecientos)\s+(treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa)\b/g,
+    (m, cen, dec) => String(CENTENAS_NUM[cen] + DECENAS_NUM[dec])
+  );
+  // Centena sola: "trescientos" → 300
+  t = t.replace(
+    /\b(doscientos|trescientos|cuatrocientos|quinientos|seiscientos|setecientos|ochocientos|novecientos)\b/g,
+    m => String(CENTENAS_NUM[m])
+  );
+
+  // Decena + unidad: "treinta y cinco" → 35
+  t = t.replace(
     /\b(treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa)\s+y\s+(un|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve)\b/g,
     (m, dec, uni) => String(DECENAS_NUM[dec] + UNIDADES_NUM[uni])
   );
-  // Luego decenas y unidades sueltas
   t = t.replace(
     /\b(treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa)\b/g,
     m => String(DECENAS_NUM[m])
@@ -192,12 +222,31 @@ function cancelarRegistroEnCurso() {
   volverAReposo();
 }
 
-/* ── Extractores de ruta / ocupación ── */
+/* ── Extractores de ruta / ocupación ──
+   La ruta puede llegar de varias formas según cómo la transcriba
+   el reconocedor: "336", "tres tres seis", "trescientos treinta
+   y seis", o "ruta expreso" / "semiexpreso". Se cubren todas. ── */
 function extraerRuta(textoNorm) {
-  for (const r of rutas) {
-    const patron = new RegExp('\\b' + normalizarVoz(r) + '\\b');
-    if (patron.test(textoNorm)) return r;
+  const t = ' ' + textoNorm + ' ';
+
+  // 1) Rutas especiales por palabra (expreso / semiexpreso → SEMIEXP)
+  if (/\b(semi\s*expreso|semiexpreso|expreso|exp)\b/.test(t)) {
+    if (rutas.includes('SEMIEXP')) return 'SEMIEXP';
   }
+
+  // 2) Coincidencia directa del número tal cual ("336")
+  for (const r of rutas) {
+    if (r === 'SEMIEXP') continue;
+    if (new RegExp('\\b' + normalizarVoz(r) + '\\b').test(t)) return r;
+  }
+
+  // 3) Número dicho dígito por dígito: "tres tres seis" → "336"
+  const soloDigitos = t.replace(/[^0-9\s]/g, ' ').replace(/\s+/g, '');
+  for (const r of rutas) {
+    if (r === 'SEMIEXP') continue;
+    if (soloDigitos.includes(r)) return r;
+  }
+
   return null;
 }
 function extraerOcupacion(textoNorm) {
@@ -282,8 +331,8 @@ function siguientePreguntaPendiente() {
 
   const placaInp = document.getElementById('f-placa');
   if (placaInp.classList.contains('placa-nueva') && !placaInp.value.trim()) {
-    esperando = 'placa';
-    return 'Bus nuevo. Dime la placa, letra por letra y número por número.';
+    // La placa NO se dicta por voz (poco fiable): se pide escribir a mano
+    return 'Bus nuevo. Escribe la placa a mano en la pantalla, y luego di "listo".';
   }
 
   if (!modoParadero) {
@@ -404,8 +453,7 @@ function procesarCorreccionCampo(campo, textoOriginal) {
   if (campo === 'padron') {
     const placaInp = document.getElementById('f-placa');
     if (placaInp.classList.contains('placa-nueva') && !placaInp.value.trim()) {
-      esperando = 'placa';
-      hablar('Bus nuevo. Dime la placa, letra por letra y número por número.');
+      hablar('Bus nuevo. Escribe la placa a mano en la pantalla, y luego di "listo".');
       return;
     }
   }
@@ -450,13 +498,26 @@ function procesarFrase(textoOriginal) {
       estado.ruta && estado.ocupacion &&
       !document.getElementById('f-padron').value.trim()) {
     let restante = texto;
+    // Quitar el "codigo N" para que ese número NO se tome como padrón
+    restante = restante.replace(/codigo\s+\d+/g, ' ');
+    // Quitar el número de la ruta (ej. "336", "trescientos treinta y seis" ya convertido)
     if (rutaEncontrada) restante = restante.replace(normalizarVoz(rutaEncontrada), ' ');
+    restante = restante.replace(/\b(301|303|305|336|372)\b/g, ' ');
     Object.values(PATRONES_CAMPO).flat().forEach(p => { restante = restante.replace(p, ' '); });
-    const suelto = restante.match(/\b(\d{1,3})\b/);
+    const suelto = restante.match(/\b(\d{1,4})\b/);
     if (suelto) {
       const r = aplicarPadron(suelto[1]);
       if (r.ok) aplicoAlgo = true;
     }
+  }
+
+  // ── Si se estaba esperando la placa escrita a mano y el usuario
+  // dice "listo"/"ya"/"continua", re-evaluar (la placa ya debería estar escrita) ──
+  const placaInp0 = document.getElementById('f-placa');
+  const esperabaPlacaManual = placaInp0.classList.contains('placa-nueva') &&
+                              !aplicoAlgo && /\b(listo|ya|continua|sigue|siguiente)\b/.test(texto);
+  if (esperabaPlacaManual && placaInp0.value.trim()) {
+    aplicoAlgo = true; // la placa fue escrita: avanzar
   }
 
   const pregunta = siguientePreguntaPendiente();
@@ -513,6 +574,15 @@ function crearReconocimiento() {
     // Cada vez que llega audio útil, se reinicia la cuenta de silencio
     cancelarRecordatorio();
 
+    // ── Comando global para APAGAR por voz: "minpao finaliza/termina/para" ──
+    const pa = normalizarVoz(palabraActivacion);
+    const reFinaliza = new RegExp(pa + '\\s+(finaliza|termina|para|apaga|detente|chau)');
+    if (reFinaliza.test(textoNorm) || /\bfinalizar voz|terminar voz|apagar voz\b/.test(textoNorm)) {
+      hablar('Modo voz apagado.');
+      setTimeout(() => desactivarModoVoz(), 900);
+      return;
+    }
+
     // ── Comandos globales (funcionan en cualquier momento) ──
     if (/cancelar registro|cancelar/.test(textoNorm)) { cancelarRegistroEnCurso(); return; }
     if (/nuevo registro|nuevo bus|empezar de nuevo/.test(textoNorm)) {
@@ -540,9 +610,7 @@ function crearReconocimiento() {
     }
 
     // ── Registro en curso ──
-    if (esperando === 'placa') {
-      procesarPlacaDeletreada(texto);
-    } else if (esperando === 'confirmacion') {
+    if (esperando === 'confirmacion') {
       procesarConfirmacion(texto);
     } else if (esperando && esperando.startsWith('campo:')) {
       procesarCorreccionCampo(esperando.split(':')[1], texto);
@@ -670,7 +738,9 @@ function iniciarEscuchaWakeWord() {
   wakeWordRecognition.onresult = (evento) => {
     for (let i = evento.resultIndex; i < evento.results.length; i++) {
       const texto = normalizarVoz(evento.results[i][0].transcript);
-      if (texto.includes(normalizarVoz(palabraActivacion))) {
+      const pa = normalizarVoz(palabraActivacion);
+      // Acepta la palabra clave sola, o con "inicia/activa/empieza/comienza"
+      if (texto.includes(pa)) {
         try { wakeWordRecognition.stop(); } catch (e) {}
         activarConversacionPorVoz(true);
         return;
