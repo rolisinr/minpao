@@ -1,0 +1,17 @@
+# Netlify: reglas de cache para evitar que el navegador sirva versiones viejas
+# del Service Worker o del HTML principal.
+
+/sw.js
+  Cache-Control: no-cache, no-store, must-revalidate
+  Pragma: no-cache
+  Expires: 0
+
+/index.html
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/manifest.json
+  Cache-Control: no-cache, no-store, must-revalidate
+
+# Los íconos PNG sí pueden cachearse porque cambiarlos requeriría renombrarlos.
+/icon*.png
+  Cache-Control: public, max-age=86400
