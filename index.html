@@ -448,7 +448,7 @@ cursor:pointer;
 .btn-voz{width:100%;background:var(--verde);color:#fff;border:none;border-radius:10px;padding:12px;
   font-size:16px;font-weight:800;margin-top:8px;cursor:pointer;transition:.15s;}
 .btn-voz.escuchando{background:var(--rojo);animation:pulso 1.2s ease-in-out infinite;}
-.btn-voz.bloqueada{background:var(--rojo);position:relative;z-index:9999;} /* Wake Lock activo: rojo fijo, sin parpadeo, y por encima del bloqueo táctil */
+.btn-voz.bloqueada{background:var(--rojo);position:relative;z-index:9999;animation:pulso 1.2s ease-in-out infinite;} /* Wake Lock activo: rojo parpadeante y por encima del bloqueo táctil */
 @keyframes pulso{0%,100%{opacity:1;}50%{opacity:.65;}}
 
 /* ── OCUPACIÓN ── */
@@ -1334,7 +1334,7 @@ body.es-admin .solo-admin.flex{display:flex !important;}
 
     <!-- ── SUBTAB: USUARIOS ── -->
     <div id="admin-tab-usuarios">
-      <button class="btn-ok" onclick="cargarPanelUsuarios()" style="background:#1565c0;width:100%;margin-bottom:10px;">🔄 Actualizar</button>
+      <button class="btn-admin-tab activo" onclick="cargarPanelUsuarios()" style="width:100%;margin-bottom:10px;">🔄 Actualizar lista</button>
       <div id="admin-lista-usuarios"><em style="color:#999;">Toca Actualizar para cargar.</em></div>
     </div>
 
@@ -1366,33 +1366,12 @@ body.es-admin .solo-admin.flex{display:flex !important;}
 </div>
 
 <!-- ══ OVERLAY PERFIL ══ -->
-<div class="overlay" id="modal-perfil">
-
-  <div class="modal"
-       style="max-width:320px;">
-
-    <div class="modal-header">
-
-      <h2>👤 Mi Perfil</h2>
-
-      <button
-        class="modal-close"
-        onclick="cerrarModal('modal-perfil')">
-
-        ✕
-
-      </button>
-
-    </div>
-
-    <div class="modal-body">
-
-      <div id="perfil-info"></div>
-
-    </div>
-
+<!-- ══ PÁGINA MI PERFIL (antes era una ventana encima) ══ -->
+<div class="page" id="page-perfil">
+  <div class="card">
+    <h3>👤 Mi Perfil</h3>
+    <div id="perfil-info"></div>
   </div>
-
 </div>
 
 <!-- ══ MODAL NUEVO PADRÓN ══ -->
@@ -1765,7 +1744,7 @@ let mostrarBibliotecaCompleta = false;
 const APP_VERSION = '1.1.0';
 
 const API_URL =
-"https://script.google.com/macros/s/AKfycby0ulYfq9mvlZO-q7dxC3qlHS0UTNfFNtWia9luGg3eIWvpOJICRnuQL8CREvkq3QXS/exec";
+"https://script.google.com/macros/s/AKfycbz_AnZJPmMDy8E9-mluya4XyMSoeogXoB5h41FHsBl2yXaXPG95BU386Yy1jLsblCPY/exec";
 
 const STORAGE_USUARIO =
 "MINPAO_USUARIO";
@@ -4089,7 +4068,12 @@ function abrirMiPerfil(){
     'perfil-info'
   ).innerHTML = html;
 
-  document.getElementById('modal-perfil').classList.add('activo');
+  // Navegar a la página de perfil (ya no es una ventana encima)
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('activo'));
+  document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('activo'));
+  document.getElementById('page-perfil').classList.add('activo');
+  const tabs = document.querySelectorAll('.nav-tab');
+  tabs[tabs.length-1].classList.add('activo');
 
 }
 
