@@ -448,6 +448,7 @@ cursor:pointer;
 .btn-voz{width:100%;background:var(--verde);color:#fff;border:none;border-radius:10px;padding:12px;
   font-size:16px;font-weight:800;margin-top:8px;cursor:pointer;transition:.15s;}
 .btn-voz.escuchando{background:var(--rojo);animation:pulso 1.2s ease-in-out infinite;}
+.btn-voz.bloqueada{background:var(--rojo);position:relative;z-index:9999;} /* Wake Lock activo: rojo fijo, sin parpadeo, y por encima del bloqueo táctil */
 @keyframes pulso{0%,100%{opacity:1;}50%{opacity:.65;}}
 
 /* ── OCUPACIÓN ── */
@@ -532,6 +533,18 @@ cursor:pointer;
 body.es-admin .solo-admin{display:block !important;}
 body.es-admin .solo-admin.inline{display:inline-block !important;}
 body.es-admin .solo-admin.flex{display:flex !important;}
+
+/* ── BOTONES PÍLDORA DEL PANEL ADMIN ── */
+.btn-admin-tab{
+  flex:1;border:none;border-radius:24px;padding:10px 12px;
+  font-size:13px;font-weight:700;color:#546e7a;background:#eceff1;
+  cursor:pointer;transition:.2s;letter-spacing:.2px;
+}
+.btn-admin-tab.activo{
+  color:#fff;background:linear-gradient(135deg,#1565c0,#1e88e5);
+  box-shadow:0 3px 10px rgba(21,101,192,.35);
+}
+.btn-admin-tab:active{transform:scale(.97);}
 
 /* ══ AVISOS POR PRIORIDAD ══ */
 /* INFO — banner pequeño arriba que se auto-cierra */
@@ -988,6 +1001,7 @@ body.es-admin .solo-admin.flex{display:flex !important;}
   <button class="nav-tab" onclick="irA('historial')"><span class="nav-ico">📋</span>Historial</button>
   <button class="nav-tab" onclick="irA('exportar')"><span class="nav-ico">📤</span>Exportar</button>
   <button class="nav-tab" onclick="irA('reportar')"><span class="nav-ico">💬</span>Reportar</button>
+  <button class="nav-tab solo-admin flex" onclick="irA('admin')"><span class="nav-ico">🛠️</span>Admin</button>
   <button class="nav-tab" onclick="abrirMiPerfil()"><span class="nav-ico">👤</span>Mi perfil</button>
 </div>
 
@@ -1076,10 +1090,23 @@ body.es-admin .solo-admin.flex{display:flex !important;}
     </div>
   </div>
 
+  <div id="voz-indicador" style="min-height:20px;text-align:center;font-size:13px;color:#0d47a1;font-weight:600;margin-top:4px;"></div>
   <button class="btn-voz" id="btn-modo-voz" style="display:none;" onclick="toggleModoVoz()">🎤 Modo voz</button>
+  <button class="btn-voz" id="btn-wakeword" style="display:none;background:#5e35b1;" onclick="toggleWakeWord()">🗣️ Activación por voz</button>
+  <button class="btn-voz" id="btn-editar-palabra" style="display:none;background:#555;font-size:13px;padding:8px;" onclick="configurarPalabraActivacion()">✏️ Cambiar palabra clave</button>
+  <div id="cont-velocidad-voz" style="display:none;margin-top:6px;">
+    <label style="font-size:12px;color:#555;">Velocidad de voz:</label>
+    <select onchange="cambiarVelocidadVoz(this.value)" style="width:100%;padding:6px;border-radius:6px;border:1px solid #ddd;font-size:13px;">
+      <option value="0.8">Lento</option>
+      <option value="1.0" selected>Normal</option>
+      <option value="1.3">Rápido</option>
+    </select>
+  </div>
   <button class="btn-voz" id="btn-wakelock" style="display:none;background:#37474f;" onclick="toggleWakeLock()">🔒 Mantener pantalla</button>
+  <button class="btn-voz" id="btn-modo-paradero" style="display:none;background:#6d4c41;" onclick="toggleModoParadero()">🚦 Modo: Tranquera</button>
   <button class="btn-guardar" onclick="guardarRegistro()">💾 Guardar registro</button>
 </div>
+<div id="overlay-bloqueo" style="position:fixed;inset:0;background:transparent;display:none;z-index:9998;"></div>
 
 <!-- ══ PÁGINA: HISTORIAL ══ -->
 <div class="page" id="page-historial">
@@ -1204,9 +1231,14 @@ body.es-admin .solo-admin.flex{display:flex !important;}
 
   </div>
 
+</div>
+
+<!-- ══ PÁGINA ADMIN (antes vivía dentro de Reportar) ══ -->
+<div class="page" id="page-admin">
+
   <!-- ══ SECCIÓN ADMIN: CREAR AVISO ══ -->
   <div class="card solo-admin">
-    <h3 style="color:#d32f2f;">📢 Crear aviso (Admin)</h3>
+    <h3 style="color:#d32f2f;">📢 Crear aviso</h3>
     <p style="font-size:12px;color:#666;margin-bottom:8px;">Los avisos se muestran a los usuarios según prioridad y destino.</p>
 
     <div class="cols2" style="margin-bottom:8px;">
@@ -1294,10 +1326,10 @@ body.es-admin .solo-admin.flex{display:flex !important;}
   <div class="card solo-admin" id="panel-admin-completo">
 
     <!-- Subtabs -->
-    <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;">
-      <button class="btn-ok" id="admin-tab-btn-usuarios"   onclick="cambiarTabAdmin('usuarios')"   style="flex:1;background:#1565c0;">👥 Usuarios</button>
-      <button class="btn-ok" id="admin-tab-btn-documentos" onclick="cambiarTabAdmin('documentos')" style="flex:1;background:#455a64;">📄 Documentos</button>
-      <button class="btn-ok" id="admin-tab-btn-reportes"   onclick="cambiarTabAdmin('reportes')"   style="flex:1;background:#455a64;">📬 Reportes</button>
+    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
+      <button class="btn-admin-tab activo" id="admin-tab-btn-usuarios"   onclick="cambiarTabAdmin('usuarios')">👥 Usuarios</button>
+      <button class="btn-admin-tab" id="admin-tab-btn-documentos" onclick="cambiarTabAdmin('documentos')">📄 Documentos</button>
+      <button class="btn-admin-tab" id="admin-tab-btn-reportes"   onclick="cambiarTabAdmin('reportes')">📬 Reportes</button>
     </div>
 
     <!-- ── SUBTAB: USUARIOS ── -->
@@ -1320,11 +1352,11 @@ body.es-admin .solo-admin.flex{display:flex !important;}
 
     <!-- ── SUBTAB: REPORTES ── -->
     <div id="admin-tab-reportes" style="display:none;">
-      <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;">
-        <button class="btn-ok" onclick="filtrarReportesAdmin('todos')"    style="flex:1;padding:7px 6px;font-size:12px;background:#455a64;" id="rbtn-todos">Todos</button>
-        <button class="btn-ok" onclick="filtrarReportesAdmin('nuevos')"   style="flex:1;padding:7px 6px;font-size:12px;background:#1565c0;" id="rbtn-nuevos">Nuevos</button>
-        <button class="btn-ok" onclick="filtrarReportesAdmin('atendidos')" style="flex:1;padding:7px 6px;font-size:12px;background:#455a64;" id="rbtn-atendidos">Atendidos</button>
-        <button class="btn-ok" onclick="cargarReportesAdmin()"            style="flex:1;padding:7px 6px;font-size:12px;background:#37474f;">🔄</button>
+      <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+        <button class="btn-admin-tab activo" onclick="filtrarReportesAdmin('todos')" style="font-size:12px;padding:8px 6px;" id="rbtn-todos">Todos</button>
+        <button class="btn-admin-tab" onclick="filtrarReportesAdmin('nuevos')" style="font-size:12px;padding:8px 6px;" id="rbtn-nuevos">Nuevos</button>
+        <button class="btn-admin-tab" onclick="filtrarReportesAdmin('atendidos')" style="font-size:12px;padding:8px 6px;" id="rbtn-atendidos">Atendidos</button>
+        <button class="btn-admin-tab" onclick="cargarReportesAdmin()" style="font-size:12px;padding:8px 6px;flex:0 0 44px;">🔄</button>
       </div>
       <div id="reportes-admin" style="font-size:13px;color:#333;"></div>
     </div>
@@ -1733,7 +1765,7 @@ let mostrarBibliotecaCompleta = false;
 const APP_VERSION = '1.1.0';
 
 const API_URL =
-"https://script.google.com/macros/s/AKfycbz_AnZJPmMDy8E9-mluya4XyMSoeogXoB5h41FHsBl2yXaXPG95BU386Yy1jLsblCPY/exec";
+"https://script.google.com/macros/s/AKfycby0ulYfq9mvlZO-q7dxC3qlHS0UTNfFNtWia9luGg3eIWvpOJICRnuQL8CREvkq3QXS/exec";
 
 const STORAGE_USUARIO =
 "MINPAO_USUARIO";
@@ -3298,7 +3330,7 @@ function cambiarTabAdmin(tab){
   ['usuarios','documentos','reportes'].forEach(t=>{
     document.getElementById('admin-tab-'+t).style.display = t===tab?'block':'none';
     const btn = document.getElementById('admin-tab-btn-'+t);
-    if(btn) btn.style.background = t===tab?'#1565c0':'#455a64';
+    if(btn) btn.classList.toggle('activo', t===tab);
   });
   if(tab==='reportes' && !_reportesCache.length) cargarReportesAdmin();
 }
@@ -3557,7 +3589,7 @@ function filtrarReportesAdmin(filtro){
   _filtroReportes=filtro;
   ['todos','nuevos','atendidos'].forEach(f=>{
     const b=document.getElementById('rbtn-'+f);
-    if(b) b.style.background=f===filtro?'#1565c0':'#455a64';
+    if(b) b.classList.toggle('activo', f===filtro);
   });
   renderReportesAdmin();
 }
@@ -5529,7 +5561,7 @@ function irA(id){
   document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('activo'));
   document.getElementById('page-'+id).classList.add('activo');
 
-  const idx={  form:0,  historial:1,  exportar:2,  reportar:3}[id];
+  const idx={  form:0,  historial:1,  exportar:2,  reportar:3,  admin:4}[id];
   document.querySelectorAll('.nav-tab')[idx].classList.add('activo');
   if(id==='historial') renderHistorial();
   if(id==='exportar'){ renderStats(); actualizarPreviewExport(); actualizarContadorBuses(); actualizarContadorPendientes(); }
@@ -6218,11 +6250,14 @@ verificarSesion();
 // Se llama desde verificarSesion() apenas llegan los datos frescos del servidor,
 // para no depender de un localStorage que todavía no se actualizó.
 function actualizarBotonesVoz(vozActiva){
-  const btn = document.getElementById('btn-modo-voz');
-  const btnWL = document.getElementById('btn-wakelock');
   const activo = String(vozActiva||'').toUpperCase() === 'SI';
-  if(btn) btn.style.display = activo ? 'block' : 'none';
-  if(btnWL) btnWL.style.display = activo ? 'block' : 'none';
+  const ids = ['btn-modo-voz','btn-wakeword','btn-editar-palabra','btn-wakelock','btn-modo-paradero'];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.style.display = activo ? 'block' : 'none';
+  });
+  const contVel = document.getElementById('cont-velocidad-voz');
+  if(contVel) contVel.style.display = activo ? 'block' : 'none';
 }
 
 

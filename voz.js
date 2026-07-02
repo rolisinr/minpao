@@ -1,34 +1,36 @@
 /* ══════════════════════════════════════════════════════════════
-   MINPAO · MODO VOZ (voz.js)
+   MINPAO · MODO VOZ (voz.js) — Versión 4, completa
    ------------------------------------------------------------
-   Versión 3 — Paso 5 del plan:
-   Suma el RESUMEN FINAL leído en voz, la CONFIRMACIÓN
-   ("guardar"/"sí"/"dale") y la CORRECCIÓN por voz
-   ("corregir ruta", "corregir padrón", "repetir", etc.)
+   Suma sobre la versión anterior:
+   - Activación por palabra clave "Azulito" (además del botón)
+   - Palabra de activación configurable
+   - Comando "cancelar" en cualquier momento
+   - Límite de 3 intentos fallidos → pasa a modo manual solo
+   - Indicador visual en pantalla de qué está pasando
+   - Velocidad de habla configurable (lento/normal/rápido)
 
-   Idioma/región: es-PE en reconocimiento y síntesis en todo
-   el módulo, pensado para acento y vocabulario peruano
-   (números, "dale"/"ya"/"listo" como formas de confirmar).
+   NOTA: el "tiempo de silencio" antes de considerar que el
+   inspector terminó de hablar NO es configurable — no existe
+   ninguna API web estándar para tocar ese valor, lo maneja
+   internamente el motor de reconocimiento del navegador.
    ══════════════════════════════════════════════════════════════ */
 
 const IDIOMA_VOZ = 'es-PE';
+const MAX_INTENTOS = 3;
 
 /* ── Sinónimos aceptados por cada nivel de ocupación ── */
 const SINONIMOS_OCUPACION = {
-  FULL:     ['no entra nadie', 'repleto', 'full', 'lleno'],
-  PARADO:   ['hay parados', 'de pie', 'parados', 'parado'],
-  COMPLETO: ['asientos llenos', 'todos sentados', 'completo'],
-  SENTADO:  ['asientos ocupados', 'sentados', 'sentado'],
-  MEDIO:    ['medio vacío', 'medio vacio', 'casi vacío', 'casi vacio', 'mitad', 'medio'],
-  VACIO:    ['sin gente', 'vacío', 'vacio', 'nadie'],
+  FULL:     ['no entra nadie', 'repleto', 'full', 'lleno', 'codigo 6'],
+  PARADO:   ['hay parados', 'de pie', 'parados', 'parado', 'codigo 5'],
+  COMPLETO: ['asientos llenos', 'todos sentados', 'completo', 'codigo 4'],
+  SENTADO:  ['asientos ocupados', 'sentados', 'sentado', 'codigo 3'],
+  MEDIO:    ['medio vacío', 'medio vacio', 'casi vacío', 'casi vacio', 'mitad', 'medio', 'codigo 2'],
+  VACIO:    ['sin gente', 'vacío', 'vacio', 'nadie', 'codigo 1'],
 };
 const PARES_OCUPACION = Object.entries(SINONIMOS_OCUPACION)
   .flatMap(([cat, frases]) => frases.map(f => [cat, f]))
   .sort((a, b) => b[1].length - a[1].length);
 
-/* ── Palabras clave para cada campo numérico.
-   pax-espera SIEMPRE antes que t-espera para que "espera" no
-   se cruce entre los dos campos. ── */
 const PATRONES_CAMPO = {
   padron: [/padron(?:es)?\s+(\d+)/],
   bajan: [/bajan\s+(\d+)/, /(\d+)\s+bajan/],
@@ -45,7 +47,6 @@ const PATRONES_CAMPO = {
   ],
 };
 
-/* ── Letras y números dictados de a uno (para la placa) ── */
 const NOMBRES_LETRA = {
   a:'A', be:'B', b:'B', ce:'C', c:'C', de:'D', d:'D', e:'E',
   efe:'F', f:'F', ge:'G', g:'G', hache:'H', h:'H', i:'I',
@@ -60,7 +61,41 @@ const NUMERO_PALABRAS = {
   cinco:'5', seis:'6', siete:'7', ocho:'8', nueve:'9',
 };
 
-/* ── Campos que se pueden corregir por voz, con su forma de re-preguntar ── */
+/* ── Conversor de números dichos en palabras a dígitos (0 a 99) ──
+   El reconocedor a veces transcribe números chicos en palabras
+   ("bajan tres" en vez de "bajan 3"); esta conversión se aplica a
+   toda la frase antes de extraer campos, para no perder esos datos. ── */
+const UNIDADES_NUM = {
+  cero:0, un:1, uno:1, una:1, dos:2, tres:3, cuatro:4, cinco:5,
+  seis:6, siete:7, ocho:8, nueve:9, diez:10, once:11, doce:12,
+  trece:13, catorce:14, quince:15, dieciseis:16, diecisiete:17,
+  dieciocho:18, diecinueve:19, veinte:20, veintiun:21, veintiuno:21,
+  veintidos:22, veintitres:23, veinticuatro:24, veinticinco:25,
+  veintiseis:26, veintisiete:27, veintiocho:28, veintinueve:29,
+};
+const DECENAS_NUM = {
+  treinta:30, cuarenta:40, cincuenta:50, sesenta:60,
+  setenta:70, ochenta:80, noventa:90,
+};
+
+function palabrasANumeros(textoNorm) {
+  // Primero compuestos "treinta y cinco" → 35
+  let t = textoNorm.replace(
+    /\b(treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa)\s+y\s+(un|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve)\b/g,
+    (m, dec, uni) => String(DECENAS_NUM[dec] + UNIDADES_NUM[uni])
+  );
+  // Luego decenas y unidades sueltas
+  t = t.replace(
+    /\b(treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa)\b/g,
+    m => String(DECENAS_NUM[m])
+  );
+  t = t.replace(
+    /\b(cero|un|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|dieciseis|diecisiete|dieciocho|diecinueve|veinte|veintiun|veintiuno|veintidos|veintitres|veinticuatro|veinticinco|veintiseis|veintisiete|veintiocho|veintinueve)\b/g,
+    m => String(UNIDADES_NUM[m])
+  );
+  return t;
+}
+
 const CAMPOS_CORREGIBLES = {
   ruta: 'ruta', ocupacion: 'ocupacion', ocupación: 'ocupacion',
   padron: 'padron', padrón: 'padron', placa: 'placa',
@@ -70,10 +105,19 @@ const CAMPOS_CORREGIBLES = {
 };
 
 /* ── Estado del módulo ──
-   esperando puede ser: null | 'placa' | 'confirmacion' | 'campo:<nombre>' */
+   esperando: null | 'placa' | 'confirmacion' | 'campo:<nombre>'
+   modoParadero: false = Tranquera, true = Paradero
+   wakeWordActivo: si está escuchando de fondo la palabra clave */
 let vozActivaAhora = false;
 let reconocimiento = null;
 let esperando = null;
+let modoParadero = false;
+let intentosFallidos = 0;
+let velocidadVoz = 1.0;
+
+let wakeWordActivo = false;
+let wakeWordRecognition = null;
+let palabraActivacion = localStorage.getItem('minpao_palabra_voz') || 'minpao';
 
 /* ── Utilidades ── */
 function normalizarVoz(txt) {
@@ -83,11 +127,17 @@ function normalizarVoz(txt) {
     .trim();
 }
 
+function actualizarIndicadorVoz(texto) {
+  const el = document.getElementById('voz-indicador');
+  if (el) el.textContent = texto || '';
+}
+
 function hablar(texto, alTerminar) {
+  actualizarIndicadorVoz('🔵 ' + texto);
   try {
     const u = new SpeechSynthesisUtterance(texto);
     u.lang = IDIOMA_VOZ;
-    u.rate = 1.0;
+    u.rate = velocidadVoz;
     if (alTerminar) u.onend = alTerminar;
     speechSynthesis.cancel();
     speechSynthesis.speak(u);
@@ -95,6 +145,40 @@ function hablar(texto, alTerminar) {
     console.error('Error de síntesis de voz:', e);
     if (alTerminar) alTerminar();
   }
+}
+
+/* ── Velocidad de habla configurable ── */
+function cambiarVelocidadVoz(valor) {
+  velocidadVoz = parseFloat(valor) || 1.0;
+}
+
+/* ── Reinicia/registra intentos, con corte a los 3 fallos seguidos ──
+   Devuelve true si YA se activó el corte (no hay que seguir preguntando). */
+function registrarFallo() {
+  intentosFallidos++;
+  if (intentosFallidos >= MAX_INTENTOS) {
+    hablar('Vamos a completarlo a mano. Toca "Modo voz" cuando quieras seguir por voz.');
+    desactivarModoVoz();
+    return true;
+  }
+  return false;
+}
+function registrarExito() {
+  intentosFallidos = 0;
+}
+
+/* ── Comando "cancelar": borra el registro en curso y arranca de nuevo ── */
+function cancelarRegistroEnCurso() {
+  estado.ruta = '';
+  estado.ocupacion = '';
+  document.querySelectorAll('.btn-ruta, .btn-occ').forEach(b => b.classList.remove('activo'));
+  ['f-padron', 'f-placa', 'f-bajan', 'f-suben', 'f-tespera', 'f-paxespera'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.value = ''; el.className = ''; }
+  });
+  esperando = null;
+  intentosFallidos = 0;
+  hablar('Registro cancelado. Dime los datos del siguiente bus.');
 }
 
 /* ── Extractores de ruta / ocupación ── */
@@ -141,13 +225,13 @@ function aplicarPadron(numero) {
   const inp = document.getElementById('f-padron');
   if (!inp) return { ok: false, esNuevo: false };
   inp.value = numero;
-  onPadronInput(inp); // reusa la función existente (biblioteca / bus nuevo)
+  onPadronInput(inp);
   const placaInp = document.getElementById('f-placa');
   const esNuevo = placaInp.classList.contains('placa-nueva');
   return { ok: true, esNuevo };
 }
 
-/* ── Interpreta la placa dictada letra por letra, número por número ── */
+/* ── Placa dictada letra por letra, número por número ── */
 function procesarPlacaDeletreada(textoOriginal) {
   const limpio = normalizarVoz(textoOriginal).replace(/[^a-z0-9\s]/g, '');
   const tokens = limpio.split(/\s+/).filter(Boolean);
@@ -161,9 +245,12 @@ function procesarPlacaDeletreada(textoOriginal) {
   });
 
   if (resultado.length < 6) {
-    hablar('No entendí bien la placa. Decila de nuevo, letra por letra y número por número.');
+    if (!registrarFallo()) {
+      hablar('No entendí bien la placa. Dila de nuevo, letra por letra y número por número.');
+    }
     return;
   }
+  registrarExito();
 
   const placaFinal = resultado.slice(0, 3) + '-' + resultado.slice(3, 6);
   const inp = document.getElementById('f-placa');
@@ -188,7 +275,11 @@ function siguientePreguntaPendiente() {
   const placaInp = document.getElementById('f-placa');
   if (placaInp.classList.contains('placa-nueva') && !placaInp.value.trim()) {
     esperando = 'placa';
-    return 'Bus nuevo. Decime la placa, letra por letra y número por número.';
+    return 'Bus nuevo. Dime la placa, letra por letra y número por número.';
+  }
+
+  if (!modoParadero) {
+    return null; // Modo Tranquera: completo con ruta+ocupación+padrón(+placa)
   }
 
   if (!document.getElementById('f-bajan').value.trim()) return '¿Cuántos bajan?';
@@ -196,17 +287,13 @@ function siguientePreguntaPendiente() {
   if (!document.getElementById('f-tespera').value.trim()) return '¿Tiempo de espera?';
   if (!document.getElementById('f-paxespera').value.trim()) return '¿Pax en espera?';
 
-  return null; // todo completo → resumenFinal() se encarga desde acá en adelante
+  return null;
 }
 
 /* ── Arma y lee el resumen final, y pasa a modo confirmación ── */
 function resumenFinal() {
   const padron = document.getElementById('f-padron').value.trim();
   const placa = document.getElementById('f-placa').value.trim();
-  const bajan = document.getElementById('f-bajan').value.trim();
-  const suben = document.getElementById('f-suben').value.trim();
-  const tespera = document.getElementById('f-tespera').value.trim();
-  const paxespera = document.getElementById('f-paxespera').value.trim();
 
   const partes = [
     'ruta ' + estado.ruta,
@@ -214,9 +301,16 @@ function resumenFinal() {
     'padrón ' + padron,
   ];
   if (placa) partes.push('placa ' + placa);
-  partes.push('bajan ' + bajan, 'suben ' + suben);
-  if (tespera) partes.push('espera ' + tespera + ' minutos');
-  if (paxespera) partes.push('pax en espera ' + paxespera);
+
+  if (modoParadero) {
+    const bajan = document.getElementById('f-bajan').value.trim();
+    const suben = document.getElementById('f-suben').value.trim();
+    const tespera = document.getElementById('f-tespera').value.trim();
+    const paxespera = document.getElementById('f-paxespera').value.trim();
+    partes.push('bajan ' + bajan, 'suben ' + suben);
+    if (tespera) partes.push('espera ' + tespera + ' minutos');
+    if (paxespera) partes.push('pax en espera ' + paxespera);
+  }
 
   esperando = 'confirmacion';
   hablar(partes.join(', ') + '. ¿Guardo?');
@@ -227,20 +321,23 @@ function procesarConfirmacion(textoOriginal) {
   const t = normalizarVoz(textoOriginal);
 
   if (/\b(guardar|si|confirmar|dale|correcto|ya|listo)\b/.test(t)) {
+    registrarExito();
     esperando = null;
-    guardarRegistro(); // misma función de siempre
-    hablar('Registro guardado. Siguiente bus, decime los datos.');
+    guardarRegistro();
+    hablar('Registro guardado. Siguiente bus, dime los datos.');
     return;
   }
 
-  if (/\brepetir\b/.test(t)) { resumenFinal(); return; }
+  if (/\brepetir\b/.test(t)) { registrarExito(); resumenFinal(); return; }
 
   const m = t.match(/corregir\s+([a-z]+)/);
   const campo = m ? CAMPOS_CORREGIBLES[m[1]] : null;
 
-  if (campo) { iniciarCorreccion(campo); return; }
+  if (campo) { registrarExito(); iniciarCorreccion(campo); return; }
 
-  hablar('No entendí. Decí "guardar" para confirmar, o "corregir" y el campo que quieras cambiar.');
+  if (!registrarFallo()) {
+    hablar('No entendí. Di "guardar" para confirmar, o "corregir" y el campo que quieras cambiar.');
+  }
 }
 
 /* ── Prepara el re-ingreso de un campo puntual ── */
@@ -249,26 +346,26 @@ function iniciarCorreccion(campo) {
     estado.ruta = '';
     document.querySelectorAll('.btn-ruta').forEach(b => b.classList.remove('activo'));
     esperando = 'campo:ruta';
-    hablar('Decime la nueva ruta.');
+    hablar('Dime la nueva ruta.');
   } else if (campo === 'ocupacion') {
     estado.ocupacion = '';
     document.querySelectorAll('.btn-occ').forEach(b => b.classList.remove('activo'));
     esperando = 'campo:ocupacion';
-    hablar('Decime la nueva ocupación.');
+    hablar('Dime la nueva ocupación.');
   } else if (campo === 'padron') {
     document.getElementById('f-padron').value = '';
     document.getElementById('f-placa').value = '';
     esperando = 'campo:padron';
-    hablar('Decime el nuevo padrón.');
+    hablar('Dime el nuevo padrón.');
   } else if (campo === 'placa') {
     document.getElementById('f-placa').value = '';
     esperando = 'placa';
-    hablar('Decime la nueva placa, letra por letra y número por número.');
+    hablar('Dime la nueva placa, letra por letra y número por número.');
   } else {
     const idMap = { bajan: 'f-bajan', suben: 'f-suben', espera: 'f-tespera', pax: 'f-paxespera' };
     document.getElementById(idMap[campo]).value = '';
     esperando = 'campo:' + campo;
-    hablar('Decime el nuevo valor de ' + campo + '.');
+    hablar('Dime el nuevo valor de ' + campo + '.');
   }
 }
 
@@ -293,18 +390,18 @@ function procesarCorreccionCampo(campo, textoOriginal) {
   }
 
   if (!ok) {
-    hablar('No entendí. Repetí el valor de ' + campo + '.');
+    if (!registrarFallo()) hablar('No entendí. Repite el valor de ' + campo + '.');
     return;
   }
+  registrarExito();
 
   esperando = null;
 
-  // Si se corrigió el padrón y resultó ser un bus nuevo, pide la placa antes de resumir
   if (campo === 'padron') {
     const placaInp = document.getElementById('f-placa');
     if (placaInp.classList.contains('placa-nueva') && !placaInp.value.trim()) {
       esperando = 'placa';
-      hablar('Bus nuevo. Decime la placa, letra por letra y número por número.');
+      hablar('Bus nuevo. Dime la placa, letra por letra y número por número.');
       return;
     }
   }
@@ -314,8 +411,10 @@ function procesarCorreccionCampo(campo, textoOriginal) {
 
 /* ── Procesa una frase libre en modo "todo junto" ── */
 function procesarFrase(textoOriginal) {
-  const texto = normalizarVoz(textoOriginal);
-  console.log('[voz] escuché:', textoOriginal);
+  // Convierte números en palabras a dígitos ANTES de extraer
+  // ("bajan tres" → "bajan 3", "codigo seis" → "codigo 6")
+  const texto = palabrasANumeros(normalizarVoz(textoOriginal));
+  console.log('[voz] escuché:', textoOriginal, '→', texto);
 
   let aplicoAlgo = false;
 
@@ -340,16 +439,54 @@ function procesarFrase(textoOriginal) {
   const tEsperaEncontrado = extraerCampo(texto, 'tespera');
   if (tEsperaEncontrado && aplicarCampoSimple('f-tespera', tEsperaEncontrado)) aplicoAlgo = true;
 
+  // ── Padrón sin palabra clave: si ruta y ocupación ya están,
+  // el padrón sigue vacío, y quedó un número suelto en la frase
+  // (que no fue consumido por otro campo), se toma como padrón. ──
+  if (!padronEncontrado &&
+      estado.ruta && estado.ocupacion &&
+      !document.getElementById('f-padron').value.trim()) {
+    let restante = texto;
+    if (rutaEncontrada) restante = restante.replace(normalizarVoz(rutaEncontrada), ' ');
+    Object.values(PATRONES_CAMPO).flat().forEach(p => { restante = restante.replace(p, ' '); });
+    const suelto = restante.match(/\b(\d{1,3})\b/);
+    if (suelto) {
+      const r = aplicarPadron(suelto[1]);
+      if (r.ok) aplicoAlgo = true;
+    }
+  }
+
   const pregunta = siguientePreguntaPendiente();
 
   if (pregunta === null) {
+    registrarExito();
     resumenFinal();
+  } else if (aplicoAlgo) {
+    registrarExito();
+    hablar(pregunta);
   } else {
-    hablar((aplicoAlgo ? '' : 'No te entendí. ') + pregunta);
+    if (!registrarFallo()) hablar('No te entendí. ' + pregunta);
   }
 }
 
-/* ── Reconocimiento de voz del navegador ── */
+/* ── Botón "🚦 Modo: Tranquera / 🚏 Modo: Paradero" ── */
+function toggleModoParadero() {
+  modoParadero = !modoParadero;
+  const btn = document.getElementById('btn-modo-paradero');
+  if (modoParadero) {
+    btn.textContent = '🚏 Modo: Paradero';
+    btn.style.background = '#0d47a1';
+  } else {
+    btn.textContent = '🚦 Modo: Tranquera';
+    btn.style.background = '#6d4c41';
+  }
+  if (vozActivaAhora) {
+    hablar(modoParadero
+      ? 'Modo paradero. Ahora también voy a pedir bajan, suben, espera y pax.'
+      : 'Modo tranquera. Solo ruta, ocupación y padrón.');
+  }
+}
+
+/* ── Reconocimiento de voz de la CONVERSACIÓN (no confundir con el del wake word) ── */
 function crearReconocimiento() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) {
@@ -361,8 +498,15 @@ function crearReconocimiento() {
   r.continuous = false;
   r.interimResults = false;
 
+  r.onstart = () => actualizarIndicadorVoz('🎤 Escuchando…');
+
   r.onresult = (evento) => {
     const texto = evento.results[0][0].transcript;
+    const textoNorm = normalizarVoz(texto);
+
+    // Comandos globales: funcionan en cualquier punto de la conversación
+    if (/\bcancelar\b/.test(textoNorm)) { cancelarRegistroEnCurso(); return; }
+    if (/cuantos (llevo|registros|van)/.test(textoNorm)) { responderContadorRegistros(); return; }
 
     if (esperando === 'placa') {
       procesarPlacaDeletreada(texto);
@@ -377,7 +521,9 @@ function crearReconocimiento() {
 
   r.onerror = (evento) => {
     console.error('[voz] error de reconocimiento:', evento.error);
-    if (evento.error === 'no-speech') hablar('No escuché nada. Volvé a intentar.');
+    if (evento.error === 'no-speech') {
+      if (!registrarFallo()) hablar('No escuché nada. Vuelve a intentar.');
+    }
   };
 
   r.onend = () => {
@@ -389,36 +535,171 @@ function crearReconocimiento() {
   return r;
 }
 
-/* ── Botón "🎤 Modo voz" ── */
-function toggleModoVoz() {
+/* ── Bip corto de confirmación (al activarse por palabra clave) ── */
+function bipActivacion() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.frequency.value = 880;
+    gain.gain.setValueAtTime(0.25, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
+    osc.start(); osc.stop(ctx.currentTime + 0.18);
+  } catch (e) {}
+}
+
+/* ── Contador hablado: "¿cuántos llevo?" responde los registros del día ── */
+function responderContadorRegistros() {
+  let cantidad = 0;
+  try {
+    cantidad = dbDelUsuario().filter(r => r.fecha === hoy()).length;
+  } catch (e) {}
+  if (cantidad === 0) hablar('Todavía no tienes registros hoy.');
+  else if (cantidad === 1) hablar('Llevas 1 registro hoy.');
+  else hablar('Llevas ' + cantidad + ' registros hoy.');
+}
+
+/* ── Enciende / apaga el modo voz — usado por el botón manual y por el wake word ── */
+function activarConversacionPorVoz(desdeWakeWord) {
   const btn = document.getElementById('btn-modo-voz');
+  reconocimiento = reconocimiento || crearReconocimiento();
+  if (!reconocimiento) return;
 
-  if (!vozActivaAhora) {
-    reconocimiento = reconocimiento || crearReconocimiento();
-    if (!reconocimiento) return;
+  vozActivaAhora = true;
+  esperando = null;
+  intentosFallidos = 0;
+  btn.classList.add('escuchando');
+  btn.textContent = '🎤 Escuchando…';
 
-    vozActivaAhora = true;
-    esperando = null;
-    btn.classList.add('escuchando');
-    btn.textContent = '🎤 Escuchando…';
-    hablar('Modo voz activado. Decime la ruta y la ocupación.', () => {
+  if (desdeWakeWord) {
+    // Activado con la palabra clave: bip corto + saludo mínimo, para uso ágil
+    bipActivacion();
+    hablar('Dime.', () => {
       try { reconocimiento.start(); } catch (e) {}
     });
   } else {
-    vozActivaAhora = false;
-    esperando = null;
+    hablar('Modo voz activado. Dime la ruta y la ocupación.', () => {
+      try { reconocimiento.start(); } catch (e) {}
+    });
+  }
+}
+
+function desactivarModoVoz() {
+  const btn = document.getElementById('btn-modo-voz');
+  vozActivaAhora = false;
+  esperando = null;
+  intentosFallidos = 0;
+  btn.classList.remove('escuchando');
+  btn.textContent = '🎤 Modo voz';
+  try { reconocimiento.stop(); } catch (e) {}
+  speechSynthesis.cancel();
+  actualizarIndicadorVoz('');
+  toast('Modo voz desactivado');
+
+  // Si la activación por palabra clave seguía encendida, retoma la escucha de fondo
+  if (wakeWordActivo) {
+    setTimeout(() => iniciarEscuchaWakeWord(), 800);
+  }
+}
+
+function toggleModoVoz() {
+  if (!vozActivaAhora) activarConversacionPorVoz();
+  else desactivarModoVoz();
+}
+
+/* ══════════════════════════════════════════════════════════════
+   ACTIVACIÓN POR PALABRA CLAVE ("Azulito")
+   ------------------------------------------------------------
+   Escucha de fondo, en un reconocimiento continuo aparte del de
+   la conversación (el micrófono solo puede usar uno a la vez).
+   Al detectar la palabra clave, apaga esta escucha y arranca la
+   conversación normal, como si hubieras tocado el botón.
+   ══════════════════════════════════════════════════════════════ */
+function iniciarEscuchaWakeWord() {
+  if (vozActivaAhora) return; // no correr los dos reconocimientos a la vez
+
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) {
+    toast('❌ Este navegador no soporta reconocimiento de voz', 'rojo');
+    wakeWordActivo = false;
+    return;
+  }
+
+  wakeWordRecognition = new SR();
+  wakeWordRecognition.lang = IDIOMA_VOZ;
+  wakeWordRecognition.continuous = true;
+  wakeWordRecognition.interimResults = true;
+
+  wakeWordRecognition.onstart = () => actualizarIndicadorVoz('👂 Esperando "' + palabraActivacion + '"…');
+
+  wakeWordRecognition.onresult = (evento) => {
+    for (let i = evento.resultIndex; i < evento.results.length; i++) {
+      const texto = normalizarVoz(evento.results[i][0].transcript);
+      if (texto.includes(normalizarVoz(palabraActivacion))) {
+        try { wakeWordRecognition.stop(); } catch (e) {}
+        activarConversacionPorVoz(true);
+        return;
+      }
+    }
+  };
+
+  wakeWordRecognition.onerror = (evento) => {
+    console.error('[wakeword] error:', evento.error);
+  };
+
+  wakeWordRecognition.onend = () => {
+    // Si sigue activado y no se pasó a la conversación, reinicia la escucha de fondo
+    if (wakeWordActivo && !vozActivaAhora) {
+      setTimeout(() => { try { wakeWordRecognition.start(); } catch (e) {} }, 500);
+    }
+  };
+
+  try { wakeWordRecognition.start(); } catch (e) {}
+}
+
+function detenerEscuchaWakeWord() {
+  wakeWordActivo = false;
+  if (wakeWordRecognition) { try { wakeWordRecognition.stop(); } catch (e) {} }
+  actualizarIndicadorVoz('');
+}
+
+function toggleWakeWord() {
+  const btn = document.getElementById('btn-wakeword');
+  if (!wakeWordActivo) {
+    wakeWordActivo = true;
+    btn.classList.add('escuchando');
+    btn.textContent = '🗣️ Esperando "' + palabraActivacion + '"…';
+    iniciarEscuchaWakeWord();
+  } else {
+    detenerEscuchaWakeWord();
     btn.classList.remove('escuchando');
-    btn.textContent = '🎤 Modo voz';
-    try { reconocimiento.stop(); } catch (e) {}
-    speechSynthesis.cancel();
-    toast('Modo voz desactivado');
+    btn.textContent = '🗣️ Activación por voz';
+  }
+}
+
+/* ── Palabra de activación configurable ── */
+function configurarPalabraActivacion() {
+  const nueva = prompt('Palabra de activación (sin tildes, en minúscula funciona igual):', palabraActivacion);
+  if (!nueva || !nueva.trim()) return;
+
+  palabraActivacion = normalizarVoz(nueva.trim());
+  localStorage.setItem('minpao_palabra_voz', palabraActivacion);
+  toast('Palabra de activación actualizada a "' + palabraActivacion + '"');
+
+  const btn = document.getElementById('btn-wakeword');
+  if (wakeWordActivo) {
+    detenerEscuchaWakeWord();
+    wakeWordActivo = true;
+    setTimeout(() => iniciarEscuchaWakeWord(), 500);
+    if (btn) btn.textContent = '🗣️ Esperando "' + palabraActivacion + '"…';
+  } else if (btn) {
+    btn.textContent = '🗣️ Activación por voz';
   }
 }
 
 /* ══════════════════════════════════════════════════════════════
-   WAKE LOCK — mantiene la pantalla encendida mientras se hacen
-   registros. Es INDEPENDIENTE del modo voz: se activa y desactiva
-   a mano con su propio botón, para no gastar batería todo el día.
+   WAKE LOCK + bloqueo táctil de la pantalla
    ══════════════════════════════════════════════════════════════ */
 let wakeLockRef = null;
 let wakeLockActivo = false;
@@ -435,6 +716,12 @@ async function activarWakeLock() {
   }
 }
 
+function aplicarBloqueoTactil(activar) {
+  const overlay = document.getElementById('overlay-bloqueo');
+  if (!overlay) return;
+  overlay.style.display = activar ? 'block' : 'none';
+}
+
 async function toggleWakeLock() {
   const btn = document.getElementById('btn-wakelock');
 
@@ -446,18 +733,19 @@ async function toggleWakeLock() {
   if (!wakeLockActivo) {
     await activarWakeLock();
     wakeLockActivo = true;
-    btn.classList.add('escuchando'); // reusa el mismo estilo rojo pulsante
+    btn.classList.add('bloqueada');
     btn.textContent = '🔒 Pantalla activa';
+    aplicarBloqueoTactil(true);
+    toast('🔒 Pantalla bloqueada. Toca el botón de nuevo para desbloquear.');
   } else {
     wakeLockActivo = false;
     if (wakeLockRef) { try { await wakeLockRef.release(); } catch (e) {} wakeLockRef = null; }
-    btn.classList.remove('escuchando');
+    btn.classList.remove('bloqueada');
     btn.textContent = '🔒 Mantener pantalla';
+    aplicarBloqueoTactil(false);
   }
 }
 
-// El sistema libera el Wake Lock solo al cambiar de pestaña/minimizar.
-// Si seguía activado por el usuario, lo recupera apenas vuelve a la app.
 document.addEventListener('visibilitychange', async () => {
   if (wakeLockActivo && document.visibilityState === 'visible' && !wakeLockRef) {
     await activarWakeLock();
