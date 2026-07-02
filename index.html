@@ -1733,7 +1733,7 @@ let mostrarBibliotecaCompleta = false;
 const APP_VERSION = '1.1.0';
 
 const API_URL =
-"https://script.google.com/macros/s/AKfycbz_AnZJPmMDy8E9-mluya4XyMSoeogXoB5h41FHsBl2yXaXPG95BU386Yy1jLsblCPY/exec";
+"https://script.google.com/macros/s/AKfycby0ulYfq9mvlZO-q7dxC3qlHS0UTNfFNtWia9luGg3eIWvpOJICRnuQL8CREvkq3QXS/exec";
 
 const STORAGE_USUARIO =
 "MINPAO_USUARIO";
@@ -2636,8 +2636,12 @@ if(!usuarioGuardado){
           const usuarioActual = JSON.parse(localStorage.getItem(STORAGE_USUARIO)) || {};
           usuarioActual.nivel = String(data.nivel||'NORMAL').toUpperCase();
           usuarioActual.corredor = data.corredorAsignado || usuarioActual.corredor;
+          usuarioActual.vozActiva = String(data.vozActiva||'NO').toUpperCase();
           localStorage.setItem(STORAGE_USUARIO, JSON.stringify(usuarioActual));
         }catch(e){ console.error(e); }
+
+        // Mostrar/ocultar los botones de modo voz según el permiso recién actualizado
+        actualizarBotonesVoz(data.vozActiva);
 
         // Mostrar/ocultar elementos solo-admin según nivel del usuario
         aplicarVisibilidadAdmin();
@@ -6210,18 +6214,17 @@ if ('serviceWorker' in navigator) {
 }
 verificarSesion();
 
-// Mostrar el botón de modo voz solo si el usuario tiene el permiso activado
-(function inicializarBotonVoz(){
-  try{
-    const u = JSON.parse(localStorage.getItem(STORAGE_USUARIO)||'null');
-    const btn = document.getElementById('btn-modo-voz');
-    const btnWL = document.getElementById('btn-wakelock');
-    if(u && String(u.vozActiva||'').toUpperCase() === 'SI'){
-      if(btn) btn.style.display = 'block';
-      if(btnWL) btnWL.style.display = 'block';
-    }
-  }catch(e){}
-})();
+// Muestra u oculta los botones de modo voz según el permiso del usuario.
+// Se llama desde verificarSesion() apenas llegan los datos frescos del servidor,
+// para no depender de un localStorage que todavía no se actualizó.
+function actualizarBotonesVoz(vozActiva){
+  const btn = document.getElementById('btn-modo-voz');
+  const btnWL = document.getElementById('btn-wakelock');
+  const activo = String(vozActiva||'').toUpperCase() === 'SI';
+  if(btn) btn.style.display = activo ? 'block' : 'none';
+  if(btnWL) btnWL.style.display = activo ? 'block' : 'none';
+}
+
 
 // Deshabilita el menú contextual (clic derecho en PC, long-press en celular)
 // salvo dentro de inputs/textarea, donde el usuario sí necesita copiar/pegar datos.
