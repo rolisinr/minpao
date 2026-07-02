@@ -561,10 +561,12 @@ function crearReconocimiento() {
   r.interimResults = false;
 
   r.onstart = () => {
+    marcaReconocimientoVivo = Date.now();
     actualizarIndicadorVoz(enReposo ? '👂 Esperando ruta…' : '🎤 Escuchando…');
   };
 
   r.onresult = (evento) => {
+    marcaReconocimientoVivo = Date.now();
     // Toma solo el último resultado final (el más reciente que dijo el inspector)
     const ultimo = evento.results[evento.results.length - 1];
     if (!ultimo || !ultimo.isFinal) return;
@@ -625,16 +627,40 @@ function crearReconocimiento() {
     if (evento.error !== 'no-speech' && evento.error !== 'aborted') {
       console.error('[voz] error de reconocimiento:', evento.error);
     }
-  };
-
-  r.onend = () => {
-    // Reinicio inmediato y silencioso para mantener la escucha viva todo el turno
-    if (vozActivaAhora) {
-      setTimeout(() => { try { reconocimiento.start(); } catch (e) {} }, 250);
+    // Si el error dejó el micro caído, se reintenta desde onend (se dispara igual).
+    // Para errores de permiso sí avisamos, porque no se puede recuperar solo.
+    if (evento.error === 'not-allowed' || evento.error === 'service-not-allowed') {
+      toast('❌ El micrófono está bloqueado. Permítelo en los ajustes de la app.', 'rojo');
+      vozActivaAhora = false;
     }
   };
 
+  r.onend = () => {
+    // Reinicio para mantener la escucha viva todo el turno.
+    // Se reintenta con varios intentos por si el primer start() falla
+    // (pasa cuando el motor todavía no terminó de liberarse).
+    if (!vozActivaAhora) return;
+    reiniciarReconocimiento(0);
+  };
+
   return r;
+}
+
+/* ── Reinicio robusto del reconocimiento: si start() falla porque el
+   motor aún no se liberó, reintenta unas cuantas veces con más espera.
+   Esto evita que el micrófono se quede apagado a mitad del turno. ── */
+function reiniciarReconocimiento(intento) {
+  if (!vozActivaAhora) return;
+  try {
+    reconocimiento.start();
+  } catch (e) {
+    // 'InvalidStateError' = ya está corriendo → todo bien, no hacer nada
+    if (e && e.name === 'InvalidStateError') return;
+    // Cualquier otro fallo: reintentar hasta 5 veces con espera creciente
+    if (intento < 5) {
+      setTimeout(() => reiniciarReconocimiento(intento + 1), 300 + intento * 200);
+    }
+  }
 }
 
 /* ── Bip corto de confirmación (al activarse por palabra clave) ── */
@@ -674,16 +700,42 @@ function activarConversacionPorVoz(desdeWakeWord) {
   btn.classList.add('escuchando');
   btn.textContent = '🎤 Escuchando…';
 
+  iniciarLatidoMicrofono(); // red de seguridad para que el micro no se muera
+
   if (desdeWakeWord) {
     bipActivacion();
     hablar('Dime la ruta.', () => {
-      try { reconocimiento.start(); } catch (e) {}
+      reiniciarReconocimiento(0);
     });
   } else {
     hablar('Modo voz activado. Dime la ruta para empezar.', () => {
-      try { reconocimiento.start(); } catch (e) {}
+      reiniciarReconocimiento(0);
     });
   }
+}
+
+/* ── Latido: cada 4 segundos revisa que el micrófono siga vivo.
+   marcaReconocimientoVivo se actualiza en cada onstart/onresult;
+   si pasa demasiado tiempo sin señales, se fuerza un reinicio.
+   Es la garantía de que el micro no quede apagado en silencio. ── */
+let latidoMic = null;
+let marcaReconocimientoVivo = 0;
+
+function iniciarLatidoMicrofono() {
+  detenerLatidoMicrofono();
+  marcaReconocimientoVivo = Date.now();
+  latidoMic = setInterval(() => {
+    if (!vozActivaAhora) { detenerLatidoMicrofono(); return; }
+    const inactivo = Date.now() - marcaReconocimientoVivo;
+    // Si lleva más de 6s sin ninguna señal de vida del motor, reiniciar
+    if (inactivo > 6000) {
+      marcaReconocimientoVivo = Date.now();
+      reiniciarReconocimiento(0);
+    }
+  }, 4000);
+}
+function detenerLatidoMicrofono() {
+  if (latidoMic) { clearInterval(latidoMic); latidoMic = null; }
 }
 
 function desactivarModoVoz() {
@@ -692,6 +744,7 @@ function desactivarModoVoz() {
   esperando = null;
   enReposo = true;
   cancelarRecordatorio();
+  detenerLatidoMicrofono();
   btn.classList.remove('escuchando');
   btn.textContent = '🎤 Modo voz';
   try { reconocimiento.stop(); } catch (e) {}
