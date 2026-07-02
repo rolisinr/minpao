@@ -1,4 +1,4 @@
-const CACHE_NAME = 'minpao-v7'; // ⬅️ subir este número CADA VEZ que cambie voz.js o cualquier asset, si no el Service Worker sigue sirviendo la versión vieja desde caché
+const CACHE_NAME = 'minpao-v8'; // subir SIEMPRE que cambie voz.js u otro asset
 const ASSETS = [
   './',
   './index.html',
