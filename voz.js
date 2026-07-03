@@ -144,7 +144,7 @@ let modoParadero = false;
 let velocidadVoz = 1.0;
 let enReposo = true;              // arranca esperando la primera ruta
 let temporizadorSilencio = null;  // recordatorio único tras varios segundos de silencio
-const SEGUNDOS_SILENCIO = 12;     // espera paciente antes de UN recordatorio
+const SEGUNDOS_SILENCIO = 20;     // espera paciente antes de UN recordatorio (semáforo largo)
 
 let wakeWordActivo = false;
 let wakeWordRecognition = null;
@@ -163,19 +163,41 @@ function actualizarIndicadorVoz(texto) {
   if (el) el.textContent = texto || '';
 }
 
+/* ── minpaoHablando: true mientras suena la voz. loQueDijoMinpao guarda
+   las palabras que está diciendo, para poder filtrar el eco (que el
+   micrófono no confunda la voz de minpao con la del inspector). ── */
+let minpaoHablando = false;
+let loQueDijoMinpao = '';
+
 function hablar(texto, alTerminar) {
   actualizarIndicadorVoz('🔵 ' + texto);
+  loQueDijoMinpao = normalizarVoz(texto);
   try {
     const u = new SpeechSynthesisUtterance(texto);
     u.lang = IDIOMA_VOZ;
-    u.rate = velocidadVoz;
-    if (alTerminar) u.onend = alTerminar;
+    u.rate = Math.min(velocidadVoz * 1.15, 1.6); // un poco más rápido: menos eco, más ágil
+    u.volume = 0.9;                               // levemente más bajo: reduce el eco captado
+    minpaoHablando = true;
+    u.onend = () => {
+      minpaoHablando = false;
+      // deja de "recordar" su frase poco después, por si el eco llega con retraso
+      setTimeout(() => { loQueDijoMinpao = ''; }, 400);
+      if (alTerminar) alTerminar();
+    };
+    u.onerror = () => { minpaoHablando = false; if (alTerminar) alTerminar(); };
     speechSynthesis.cancel();
     speechSynthesis.speak(u);
   } catch (e) {
     console.error('Error de síntesis de voz:', e);
+    minpaoHablando = false;
     if (alTerminar) alTerminar();
   }
+}
+
+/* ── Corta la voz de minpao al instante (para el barge-in / interrupción) ── */
+function callarMinpao() {
+  try { speechSynthesis.cancel(); } catch (e) {}
+  minpaoHablando = false;
 }
 
 /* ── Velocidad de habla configurable ── */
@@ -321,65 +343,90 @@ function procesarPlacaDeletreada(textoOriginal) {
   else { hablar('Placa ' + placaFinal + ' anotada. ' + pregunta); }
 }
 
-/* ── Devuelve la próxima pregunta pendiente, o null si ya está todo completo ── */
+/* ── Devuelve la próxima pregunta pendiente, o null si ya está todo completo.
+   Frases de una sola palabra, cortas y directas. ── */
 function siguientePreguntaPendiente() {
-  if (!estado.ruta) return '¿Qué ruta?';
-  if (!estado.ocupacion) return '¿Cómo va la ocupación?';
+  if (!estado.ruta) return 'Ruta';
+  if (!estado.ocupacion) return 'Capacidad';
 
   const padronVal = document.getElementById('f-padron').value.trim();
-  if (!padronVal) return '¿Cuál es el padrón?';
+  if (!padronVal) return 'Padrón';
 
   const placaInp = document.getElementById('f-placa');
   if (placaInp.classList.contains('placa-nueva') && !placaInp.value.trim()) {
     // La placa NO se dicta por voz (poco fiable): se pide escribir a mano
-    return 'Bus nuevo. Escribe la placa a mano en la pantalla, y luego di "listo".';
+    return 'Bus nuevo. Escribe la placa y di "listo".';
   }
 
   if (!modoParadero) {
     return null; // Modo Tranquera: completo con ruta+ocupación+padrón(+placa)
   }
 
-  if (!document.getElementById('f-bajan').value.trim()) return '¿Cuántos bajan?';
-  if (!document.getElementById('f-suben').value.trim()) return '¿Cuántos suben?';
-  if (!document.getElementById('f-tespera').value.trim()) return '¿Tiempo de espera?';
-  if (!document.getElementById('f-paxespera').value.trim()) return '¿Pax en espera?';
+  if (!document.getElementById('f-bajan').value.trim()) return 'Bajan';
+  if (!document.getElementById('f-suben').value.trim()) return 'Suben';
+  if (!document.getElementById('f-tespera').value.trim()) return 'Espera';
+  if (!document.getElementById('f-paxespera').value.trim()) return 'Pax';
 
   return null;
 }
 
-/* ── Arma y lee el resumen final, y pasa a modo confirmación ── */
-function resumenFinal() {
+/* ── Arma el texto del resumen corto: "301, sentados 100%, padrón 21"
+   Sin la palabra "ruta" delante del número y sin leer la placa. ── */
+function textoResumenCorto() {
   const padron = document.getElementById('f-padron').value.trim();
-  const placa = document.getElementById('f-placa').value.trim();
-
   const partes = [
-    'ruta ' + estado.ruta,
-    'ocupación ' + estado.ocupacion,
+    estado.ruta,              // solo el número/nombre, sin "ruta"
+    estado.ocupacion,         // ej. "Sentados (100%)"
     'padrón ' + padron,
   ];
-  if (placa) partes.push('placa ' + placa);
-
   if (modoParadero) {
     const bajan = document.getElementById('f-bajan').value.trim();
     const suben = document.getElementById('f-suben').value.trim();
     const tespera = document.getElementById('f-tespera').value.trim();
     const paxespera = document.getElementById('f-paxespera').value.trim();
     partes.push('bajan ' + bajan, 'suben ' + suben);
-    if (tespera) partes.push('espera ' + tespera + ' minutos');
-    if (paxespera) partes.push('pax en espera ' + paxespera);
+    if (tespera) partes.push('espera ' + tespera);
+    if (paxespera) partes.push('pax ' + paxespera);
   }
-
-  esperando = 'confirmacion';
-  hablar(partes.join(', ') + '. ¿Guardo?');
+  return partes.join(', ');
 }
 
-/* ── Interpreta la respuesta a "¿Guardo?" ── */
+let tempAutoGuardar = null;
+
+/* ── Resumen 1: lo lee y pregunta "¿guardar o corregir?".
+   Si en 5 segundos no respondes, dispara el auto-guardado (Resumen 2). ── */
+function resumenFinal() {
+  esperando = 'confirmacion';
+  cancelarAutoGuardar();
+  hablar(textoResumenCorto() + '. ¿Guardar o corregir?', () => {
+    // Al terminar de hablar, arranca la cuenta de 5s para auto-guardar
+    tempAutoGuardar = setTimeout(() => {
+      if (esperando === 'confirmacion') autoGuardarConResumen();
+    }, 5000);
+  });
+}
+
+/* ── Resumen 2: repite el resumen y guarda solo ── */
+function autoGuardarConResumen() {
+  cancelarAutoGuardar();
+  guardarRegistro();
+  hablar(textoResumenCorto() + '. Guardado.');
+  volverAReposo();
+}
+function cancelarAutoGuardar() {
+  if (tempAutoGuardar) { clearTimeout(tempAutoGuardar); tempAutoGuardar = null; }
+}
+
+/* ── Interpreta la respuesta a "¿Guardar o corregir?" (o "¿Guardar o eliminar?") ── */
 function procesarConfirmacion(textoOriginal) {
   const t = normalizarVoz(textoOriginal);
+  cancelarAutoGuardar(); // el inspector respondió: cancelar el auto-guardado
 
-  if (/\b(guardar|si|confirmar|dale|correcto|ya|listo)\b/.test(t)) {
+  if (/\b(eliminar|borrar)\b/.test(t)) { cancelarRegistroEnCurso(); return; }
+
+  if (/\b(guardar|guarda|si|confirmar|dale|correcto|ya|listo)\b/.test(t)) {
     guardarRegistro();
-    hablar('Registro guardado. Dime la ruta del siguiente bus.');
+    hablar('Guardado.');
     volverAReposo();
     return;
   }
@@ -391,7 +438,8 @@ function procesarConfirmacion(textoOriginal) {
 
   if (campo) { iniciarCorreccion(campo); return; }
 
-  hablar('No entendí. Di "guardar" para confirmar, o "corregir" y el campo que quieras cambiar.');
+  // No entendió: vuelve a leer el resumen (que re-arma la cuenta de 5s)
+  resumenFinal();
 }
 
 /* ── Prepara el re-ingreso de un campo puntual ── */
@@ -572,9 +620,25 @@ function crearReconocimiento() {
     if (!ultimo || !ultimo.isFinal) return;
     const texto = ultimo[0].transcript;
     const textoNorm = normalizarVoz(texto);
+    if (!textoNorm) return;
+
+    // ── FILTRO DE ECO: si minpao está hablando y lo que se captó es
+    // casi idéntico a lo que minpao dice, es su propio eco → ignorar.
+    // Si el inspector dijo algo más (ej. "ruta 301" vs eco "ruta"),
+    // NO es eco: se procesa y se le corta la voz a minpao (barge-in). ──
+    if (minpaoHablando && loQueDijoMinpao) {
+      const soloEco = (textoNorm === loQueDijoMinpao) ||
+                      (loQueDijoMinpao.includes(textoNorm) && textoNorm.length >= 4);
+      // Detectar si el inspector aportó datos reales (números, ruta, código, comandos)
+      const tieneDatoUtil = /\d/.test(textoNorm) ||
+                            /\b(guardar|corregir|cancelar|nuevo|expreso|listo|codigo|eliminar|borrar|continuar|reanudar)\b/.test(textoNorm);
+      if (soloEco && !tieneDatoUtil) return; // es eco puro: ignorar
+      callarMinpao(); // el inspector habló con contenido: interrumpir a minpao
+    }
 
     // Cada vez que llega audio útil, se reinicia la cuenta de silencio
     cancelarRecordatorio();
+    cancelarAutoGuardar();
 
     // ── Comando global para APAGAR por voz: "minpao finaliza/termina/para" ──
     const pa = normalizarVoz(palabraActivacion);
@@ -588,18 +652,45 @@ function crearReconocimiento() {
     // ── Comandos globales (funcionan en cualquier momento) ──
     if (/cancelar registro|cancelar/.test(textoNorm)) { cancelarRegistroEnCurso(); return; }
     if (/nuevo registro|nuevo bus|empezar de nuevo/.test(textoNorm)) {
-      // Arranca uno nuevo aunque esté a mitad de otro
+      // Limpia todo y vuelve al reposo silencioso (igual que cancelar):
+      // espera tranquilo la próxima ruta, sin repetir seguido.
       estado.ruta = ''; estado.ocupacion = '';
       document.querySelectorAll('.btn-ruta, .btn-occ').forEach(b => b.classList.remove('activo'));
       ['f-padron','f-placa','f-bajan','f-suben','f-tespera','f-paxespera'].forEach(id => {
         const el = document.getElementById(id); if (el) { el.value = ''; el.className = ''; }
       });
-      enReposo = false;
-      hablar('Nuevo registro. Dime la ruta.');
-      programarRecordatorio();
+      hablar('Nuevo registro. Ruta.');
+      volverAReposo();
       return;
     }
     if (/cuantos (llevo|registros|van)/.test(textoNorm)) { responderContadorRegistros(); return; }
+
+    // ── Comando global "guardar": si el formulario está completo,
+    // funciona en cualquier momento (incluso recién activada la voz) ──
+    if (/\bguardar\b/.test(textoNorm) && esperando !== 'confirmacion' && estadoFormulario() === 'completo') {
+      cancelarAutoGuardar();
+      guardarRegistro();
+      hablar('Guardado.');
+      volverAReposo();
+      return;
+    }
+
+    // ── Decisión de reanudar: "¿Continuar o eliminar?" tras reactivar la voz ──
+    if (esperando === 'reanudar') {
+      if (/\b(eliminar|borrar|cancelar)\b/.test(textoNorm)) { cancelarRegistroEnCurso(); return; }
+      if (/\b(continuar|reanudar|seguir|sigue)\b/.test(textoNorm)) {
+        esperando = null;
+        const pregunta = siguientePreguntaPendiente();
+        if (pregunta === null) { resumenFinal(); } else { hablar(pregunta); programarRecordatorio(); }
+        return;
+      }
+      // Si en vez de responder dice directamente un dato (ej. "código 3"),
+      // se toma como "continuar" y se procesa de una vez
+      esperando = null;
+      procesarFrase(texto);
+      programarRecordatorio();
+      return;
+    }
 
     // ── En REPOSO: solo reacciona si oye una ruta válida; todo lo demás lo ignora ──
     if (enReposo) {
@@ -689,6 +780,37 @@ function responderContadorRegistros() {
 }
 
 /* ── Enciende / apaga el modo voz — usado por el botón manual y por el wake word ── */
+/* ── Evalúa qué tan lleno está el formulario al momento de activar la voz:
+   'vacio'    → nada marcado, arranca normal esperando ruta
+   'parcial'  → hay algo a medias (ej. solo ruta, o ruta+padrón sin capacidad)
+   'completo' → están todos los campos que exige el modo actual ── */
+function estadoFormulario() {
+  const padron = document.getElementById('f-padron').value.trim();
+  const tieneAlgo = estado.ruta || estado.ocupacion || padron;
+  if (!tieneAlgo) return 'vacio';
+
+  // ¿Está completo según el modo actual? (misma lógica que las preguntas)
+  if (!estado.ruta || !estado.ocupacion || !padron) return 'parcial';
+  const placaInp = document.getElementById('f-placa');
+  if (placaInp.classList.contains('placa-nueva') && !placaInp.value.trim()) return 'parcial';
+  if (modoParadero) {
+    const faltan = ['f-bajan','f-suben','f-tespera','f-paxespera']
+      .some(id => !document.getElementById(id).value.trim());
+    if (faltan) return 'parcial';
+  }
+  return 'completo';
+}
+
+/* ── Describe brevemente lo que ya está lleno, para el aviso de reanudar ── */
+function descripcionParcial() {
+  const partes = [];
+  if (estado.ruta) partes.push(estado.ruta);
+  if (estado.ocupacion) partes.push(estado.ocupacion);
+  const padron = document.getElementById('f-padron').value.trim();
+  if (padron) partes.push('padrón ' + padron);
+  return partes.join(', ');
+}
+
 function activarConversacionPorVoz(desdeWakeWord) {
   const btn = document.getElementById('btn-modo-voz');
   reconocimiento = reconocimiento || crearReconocimiento();
@@ -696,22 +818,40 @@ function activarConversacionPorVoz(desdeWakeWord) {
 
   vozActivaAhora = true;
   esperando = null;
-  enReposo = true; // arranca esperando la primera ruta
   btn.classList.add('escuchando');
   btn.textContent = '🎤 Escuchando…';
 
   iniciarLatidoMicrofono(); // red de seguridad para que el micro no se muera
+  if (desdeWakeWord) bipActivacion();
 
-  if (desdeWakeWord) {
-    bipActivacion();
-    hablar('Dime la ruta.', () => {
+  // ── Revisar si quedó un registro a medias o completo de antes ──
+  const estadoForm = estadoFormulario();
+
+  if (estadoForm === 'completo') {
+    // Todo lleno: ofrecer guardarlo o eliminarlo directamente
+    enReposo = false;
+    esperando = 'confirmacion';
+    hablar('Registro pendiente: ' + textoResumenCorto() + '. ¿Guardar o eliminar?', () => {
       reiniciarReconocimiento(0);
     });
-  } else {
-    hablar('Modo voz activado. Dime la ruta para empezar.', () => {
-      reiniciarReconocimiento(0);
-    });
+    return;
   }
+
+  if (estadoForm === 'parcial') {
+    // A medias: ofrecer continuar donde quedó o eliminarlo
+    enReposo = false;
+    esperando = 'reanudar';
+    hablar('Registro a medias: ' + descripcionParcial() + '. ¿Continuar o eliminar?', () => {
+      reiniciarReconocimiento(0);
+    });
+    return;
+  }
+
+  // Formulario vacío: arranque normal
+  enReposo = true;
+  hablar(desdeWakeWord ? 'Ruta.' : 'Modo voz activado. Ruta.', () => {
+    reiniciarReconocimiento(0);
+  });
 }
 
 /* ── Latido: cada 4 segundos revisa que el micrófono siga vivo.
