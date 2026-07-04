@@ -165,24 +165,32 @@ let loQueDijoMinpao = '';
 function hablar(texto, alTerminar) {
   actualizarIndicadorVoz('🔵 ' + texto);
   loQueDijoMinpao = normalizarVoz(texto);
+  // Pausar el micrófono mientras habla para evitar que capte su propia voz (loops)
+  try { if (reconocimiento) reconocimiento.stop(); } catch(e) {}
   try {
     const u = new SpeechSynthesisUtterance(texto);
     u.lang = IDIOMA_VOZ;
-    u.rate = Math.min(velocidadVoz * 1.15, 1.6); // un poco más rápido: menos eco, más ágil
-    u.volume = 0.9;                               // levemente más bajo: reduce el eco captado
+    u.rate = Math.min(velocidadVoz * 1.15, 1.6);
+    u.volume = 0.85;
     minpaoHablando = true;
     u.onend = () => {
       minpaoHablando = false;
-      // deja de "recordar" su frase poco después, por si el eco llega con retraso
       setTimeout(() => { loQueDijoMinpao = ''; }, 400);
+      // Reactivar el micrófono después de hablar
+      if (vozActivaAhora) setTimeout(() => reiniciarReconocimiento(0), 300);
       if (alTerminar) alTerminar();
     };
-    u.onerror = () => { minpaoHablando = false; if (alTerminar) alTerminar(); };
+    u.onerror = () => {
+      minpaoHablando = false;
+      if (vozActivaAhora) setTimeout(() => reiniciarReconocimiento(0), 300);
+      if (alTerminar) alTerminar();
+    };
     speechSynthesis.cancel();
     speechSynthesis.speak(u);
   } catch (e) {
     console.error('Error de síntesis de voz:', e);
     minpaoHablando = false;
+    if (vozActivaAhora) reiniciarReconocimiento(0);
     if (alTerminar) alTerminar();
   }
 }
@@ -334,7 +342,7 @@ function procesarPlacaDeletreada(textoOriginal) {
 
   esperando = null;
   const pregunta = siguientePreguntaPendiente();
-  if (pregunta === null) { resumenFinal(); }
+  if (pregunta === null) { guardarRegistro(); bipGuardado(); hablar("Guardado."); volverAReposo(); }
   else { hablar('Placa ' + placaFinal + ' anotada. ' + pregunta); }
 }
 
@@ -396,7 +404,7 @@ function resumenFinal() {
   hablar(textoResumenCorto() + '. ¿Guardar o corregir?', () => {
     // Al terminar de hablar, arranca la cuenta de 5s para auto-guardar
     tempAutoGuardar = setTimeout(() => {
-      if (esperando === 'confirmacion') autoGuardarConResumen();
+
     }, 5000);
   });
 }
@@ -426,7 +434,7 @@ function procesarConfirmacion(textoOriginal) {
     return;
   }
 
-  if (/\brepetir\b/.test(t)) { resumenFinal(); return; }
+  if (/\brepetir\b/.test(t)) { guardarRegistro(); bipGuardado(); hablar("Guardado."); volverAReposo(); return; }
 
   const m = t.match(/corregir\s+([a-z]+)/);
   const campo = m ? CAMPOS_CORREGIBLES[m[1]] : null;
@@ -434,7 +442,7 @@ function procesarConfirmacion(textoOriginal) {
   if (campo) { iniciarCorreccion(campo); return; }
 
   // No entendió: vuelve a leer el resumen (que re-arma la cuenta de 5s)
-  resumenFinal();
+  guardarRegistro(); bipGuardado(); hablar("Guardado."); volverAReposo();
 }
 
 /* ── Prepara el re-ingreso de un campo puntual ── */
@@ -501,7 +509,7 @@ function procesarCorreccionCampo(campo, textoOriginal) {
     }
   }
 
-  resumenFinal();
+  guardarRegistro(); bipGuardado(); hablar("Guardado."); volverAReposo();
 }
 
 /* ── Procesa una frase libre en modo "todo junto" ── */
@@ -566,9 +574,11 @@ function procesarFrase(textoOriginal) {
   const pregunta = siguientePreguntaPendiente();
 
   if (pregunta === null) {
-    resumenFinal();
+    // Guardar directo, sin resumen ni confirmación
+    guardarRegistro(); bipGuardado();
+    hablar('Guardado.');
+    volverAReposo();
   } else if (aplicoAlgo) {
-    // Solo pregunta lo que falta cuando reconoció algo; si no, calla y sigue esperando
     hablar(pregunta);
   }
 }
@@ -670,11 +680,11 @@ function crearReconocimiento() {
     if (/bateria|pila|carga/.test(textoNorm)) { responderBateria(); return; }
     if (/cuanto (tiempo|falta)|tiempo restante|cuanto queda/.test(textoNorm)) { responderTiempoRestante(); return; }
     if (/ultimo (padron|registro|bus)|cual fue el ultimo/.test(textoNorm)) { responderUltimoPadron(); return; }
-    if (/corregir (ultimo|el ultimo|anterior)/.test(textoNorm)) { corregirUltimoRegistro(); return; }
-    if (/iniciar temporizador|iniciar timer|iniciar reloj/.test(textoNorm)) { iniciarTemporizador(); hablar('Temporizador iniciado.'); return; }
-    if (/pausar (registro|temporizador|timer)/.test(textoNorm)) { pausarConMotivo('Pausa por voz'); hablar('Pausado.'); return; }
-    if (/reanudar (registro|temporizador|timer)/.test(textoNorm)) { reanudarTemporizador(); hablar('Reanudado.'); return; }
-    if (/finalizar (temporizador|timer|hora)/.test(textoNorm)) { finalizarTemporizador(); return; }
+    if (/editar (ultimo|el ultimo|anterior)|ultimo registro|editar registro/.test(textoNorm)) { corregirUltimoRegistro(); return; }
+    if (/iniciar temporizador|iniciar timer|iniciar reloj|iniciar hora/.test(textoNorm)) { iniciarTemporizador(); hablar('Temporizador iniciado.'); return; }
+    if (esperando !== 'reanudar' && /\bpausar\b|pausa registro|pausa temporizador/.test(textoNorm)) { pausarConMotivo('Pausa por voz'); hablar('Pausado.'); return; }
+    if (esperando !== 'reanudar' && /\breanudar\b|reanudar registro|reanudar temporizador|continuar registro/.test(textoNorm)) { reanudarTemporizador(); hablar('Reanudado.'); return; }
+    if (/finalizar (temporizador|timer|hora)|terminar hora/.test(textoNorm)) { finalizarTemporizador(); return; }
 
     // ── Comando global "guardar": si el formulario está completo,
     // funciona en cualquier momento (incluso recién activada la voz) ──
@@ -692,7 +702,7 @@ function crearReconocimiento() {
       if (/\b(continuar|reanudar|seguir|sigue)\b/.test(textoNorm)) {
         esperando = null;
         const pregunta = siguientePreguntaPendiente();
-        if (pregunta === null) { resumenFinal(); } else { hablar(pregunta); programarRecordatorio(); }
+        if (pregunta === null) { guardarRegistro(); bipGuardado(); hablar("Guardado."); volverAReposo(); } else { hablar(pregunta); programarRecordatorio(); }
         return;
       }
       // Si en vez de responder dice directamente un dato (ej. "código 3"),
@@ -717,7 +727,7 @@ function crearReconocimiento() {
     if (esperando === 'corregir_ultimo') {
       procesarCorreccionUltimo(texto);
     } else if (esperando === 'confirmacion') {
-      procesarConfirmacion(texto);
+      procesarFrase(texto);
     } else if (esperando && esperando.startsWith('campo:')) {
       procesarCorreccionCampo(esperando.split(':')[1], texto);
     } else {
