@@ -6630,6 +6630,7 @@ document.addEventListener('contextmenu', function(e){
     }
   }
   if (d && d.estado === 'corriendo' && d.fecha === hoy()) arrancarTickTemporizador();
+  renderEstadoTemporizador(); // mostrar el temporizador siempre al cargar
   verificarPendienteExportar();
 })();
 </script>
