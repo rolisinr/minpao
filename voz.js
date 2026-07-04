@@ -1,19 +1,12 @@
 /* ══════════════════════════════════════════════════════════════
-   MINPAO · MODO VOZ (voz.js) — Versión 4, completa
-   ------------------------------------------------------------
-   Suma sobre la versión anterior:
-   - Activación por palabra clave "Azulito" (además del botón)
-   - Palabra de activación configurable
-   - Comando "cancelar" en cualquier momento
-   - Límite de 3 intentos fallidos → pasa a modo manual solo
-   - Indicador visual en pantalla de qué está pasando
-   - Velocidad de habla configurable (lento/normal/rápido)
-
-   NOTA: el "tiempo de silencio" antes de considerar que el
-   inspector terminó de hablar NO es configurable — no existe
-   ninguna API web estándar para tocar ese valor, lo maneja
-   internamente el motor de reconocimiento del navegador.
+   MINPAO · MODO VOZ (voz.js)
    ══════════════════════════════════════════════════════════════ */
+
+/* ── Verificación de compatibilidad: si el navegador no soporta
+   SpeechRecognition (ej. Safari iOS en algunos contextos), el módulo
+   se carga sin errores pero las funciones de voz no hacen nada. ── */
+const VOZ_SOPORTADA = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+const TTS_SOPORTADO = !!window.speechSynthesis;
 
 const IDIOMA_VOZ = 'es-PE';
 
@@ -148,7 +141,7 @@ const SEGUNDOS_SILENCIO = 20;     // espera paciente antes de UN recordatorio (s
 
 let wakeWordActivo = false;
 let wakeWordRecognition = null;
-let palabraActivacion = localStorage.getItem('minpao_palabra_voz') || 'minpao';
+let palabraActivacion = localStorage.getItem('minpao_palabra_voz') || 'azul';
 
 /* ── Utilidades ── */
 function normalizarVoz(txt) {
@@ -251,21 +244,23 @@ function cancelarRegistroEnCurso() {
 function extraerRuta(textoNorm) {
   const t = ' ' + textoNorm + ' ';
 
-  // 1) Rutas especiales por palabra (expreso / semiexpreso → SEMIEXP)
+  // 1) Rutas especiales por palabra (expreso / semiexpreso)
   if (/\b(semi\s*expreso|semiexpreso|expreso|exp)\b/.test(t)) {
-    if (rutas.includes('SEMIEXP')) return 'SEMIEXP';
+    // Buscar la ruta que contenga "EXP" en el array real (puede ser SEMIEXP, SEMIEXPRESO, etc.)
+    const rutaExp = rutas.find(r => normalizarVoz(r).includes('exp'));
+    if (rutaExp) return rutaExp;
   }
 
   // 2) Coincidencia directa del número tal cual ("336")
   for (const r of rutas) {
-    if (r === 'SEMIEXP') continue;
+    if (normalizarVoz(r).includes('exp')) continue; // ya manejado arriba
     if (new RegExp('\\b' + normalizarVoz(r) + '\\b').test(t)) return r;
   }
 
   // 3) Número dicho dígito por dígito: "tres tres seis" → "336"
   const soloDigitos = t.replace(/[^0-9\s]/g, ' ').replace(/\s+/g, '');
   for (const r of rutas) {
-    if (r === 'SEMIEXP') continue;
+    if (normalizarVoz(r).includes('exp')) continue;
     if (soloDigitos.includes(r)) return r;
   }
 
@@ -589,10 +584,16 @@ function toggleModoParadero() {
     btn.textContent = '🚦 Modo: Tranquera';
     btn.style.background = '#6d4c41';
   }
+  // 1.4: Mostrar/ocultar campos manuales de bajan/suben/tespera/pax
+  const wrap = document.getElementById('campos-paradero-wrap');
+  const sep = document.querySelector('.campos-paradero');
+  if (wrap) wrap.style.display = modoParadero ? 'block' : 'none';
+  if (sep) sep.style.display = modoParadero ? 'block' : 'none';
+
   if (vozActivaAhora) {
     hablar(modoParadero
-      ? 'Modo paradero. Ahora también voy a pedir bajan, suben, espera y pax.'
-      : 'Modo tranquera. Solo ruta, ocupación y padrón.');
+      ? 'Modo paradero.'
+      : 'Modo tranquera.');
   }
 }
 
@@ -664,6 +665,11 @@ function crearReconocimiento() {
       return;
     }
     if (/cuantos (llevo|registros|van|tengo)|conteo/.test(textoNorm)) { responderContadorRegistros(); return; }
+    if (/que hora es|hora actual|dime la hora/.test(textoNorm)) { responderHora(); return; }
+    if (/que dia es|dia de hoy|que fecha/.test(textoNorm)) { responderDia(); return; }
+    if (/bateria|pila|carga/.test(textoNorm)) { responderBateria(); return; }
+    if (/cuanto (tiempo|falta)|tiempo restante|cuanto queda/.test(textoNorm)) { responderTiempoRestante(); return; }
+    if (/ultimo (padron|registro|bus)|cual fue el ultimo/.test(textoNorm)) { responderUltimoPadron(); return; }
     if (/corregir (ultimo|el ultimo|anterior)/.test(textoNorm)) { corregirUltimoRegistro(); return; }
     if (/iniciar temporizador|iniciar timer|iniciar reloj/.test(textoNorm)) { iniciarTemporizador(); hablar('Temporizador iniciado.'); return; }
     if (/pausar (registro|temporizador|timer)/.test(textoNorm)) { pausarConMotivo('Pausa por voz'); hablar('Pausado.'); return; }
@@ -809,6 +815,51 @@ function responderContadorRegistros() {
   else hablar('Llevas ' + cantidad + ' registros hoy.');
 }
 
+/* ── 5.1: Consultas básicas de asistente ── */
+function responderHora() {
+  const d = new Date();
+  const h = d.getHours(), m = d.getMinutes();
+  const suf = h >= 12 ? 'de la tarde' : 'de la mañana';
+  const h12 = h > 12 ? h - 12 : (h === 0 ? 12 : h);
+  hablar('Son las ' + h12 + ' y ' + (m < 10 ? '0' : '') + m + ' ' + suf + '.');
+}
+
+function responderDia() {
+  const dias = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
+  const meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const d = new Date();
+  hablar('Hoy es ' + dias[d.getDay()] + ' ' + d.getDate() + ' de ' + meses[d.getMonth()] + '.');
+}
+
+function responderBateria() {
+  if (!navigator.getBattery) { hablar('No puedo ver la batería en este navegador.'); return; }
+  navigator.getBattery().then(bat => {
+    const pct = Math.round(bat.level * 100);
+    const cargando = bat.charging ? ', cargando' : '';
+    hablar('Batería al ' + pct + ' por ciento' + cargando + '.');
+  }).catch(() => hablar('No pude consultar la batería.'));
+}
+
+function responderTiempoRestante() {
+  try {
+    const d = cargarDatosTemporizador();
+    if (!d || !d.estado || d.estado === 'finalizado') { hablar('El temporizador no está activo.'); return; }
+    if (d.estado === 'pausado') { hablar('Pausado. Quedan ' + Math.floor(d.segundosRestantes / 60) + ' minutos.'); return; }
+    const ahora = Date.now();
+    const rest = Math.max(0, d.segundosRestantes - Math.floor((ahora - d.tsUltimoTick) / 1000));
+    hablar('Quedan ' + Math.floor(rest / 60) + ' minutos.');
+  } catch(e) { hablar('No pude consultar el temporizador.'); }
+}
+
+function responderUltimoPadron() {
+  try {
+    const regHoy = dbDelUsuario().filter(r => r.fecha === hoy());
+    if (!regHoy.length) { hablar('No hay registros hoy.'); return; }
+    const ult = regHoy[regHoy.length - 1];
+    hablar('Último: ruta ' + (ult.ruta||'') + ', padrón ' + (ult.padron||'') + '.');
+  } catch(e) { hablar('No pude consultar.'); }
+}
+
 /* ── Enciende / apaga el modo voz — usado por el botón manual y por el wake word ── */
 /* ── Evalúa qué tan lleno está el formulario al momento de activar la voz:
    'vacio'    → nada marcado, arranca normal esperando ruta
@@ -929,6 +980,7 @@ function desactivarModoVoz() {
 }
 
 function toggleModoVoz() {
+  if (!VOZ_SOPORTADA) { toast('❌ El modo voz no está disponible en este navegador', 'rojo'); return; }
   if (!vozActivaAhora) activarConversacionPorVoz();
   else desactivarModoVoz();
 }
