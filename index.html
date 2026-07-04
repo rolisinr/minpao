@@ -5159,7 +5159,6 @@ function renderBannerCOV(d){
   const wrap = document.getElementById('cov-banner-wrap');
   if(!wrap) return;
 
-  // Nombre del usuario logueado (no del campo COV, que ya no se pide)
   let nombreUsuario = '';
   try{
     const u = JSON.parse(localStorage.getItem(STORAGE_USUARIO)||'null');
@@ -5177,13 +5176,27 @@ function renderBannerCOV(d){
       <span>↔️ ${sentido}</span>
     </div>
     <div class="hora-mini">
-      <div class="h" id="horaDisplay">--:--</div>
-      <div class="f" id="horaFecha">--</div>
+      <div id="temp-banner" style="display:none;text-align:center;">
+        <div id="temp-banner-estado" style="font-size:10px;color:#999;"></div>
+        <div id="temp-banner-cuenta" style="font-size:28px;font-weight:900;color:var(--azul);font-family:monospace;line-height:1;">60:00</div>
+        <div id="temp-banner-btns" style="display:flex;gap:4px;margin-top:3px;flex-wrap:wrap;justify-content:center;">
+          <button class="btn-temp-mini" id="tbtn-iniciar" onclick="iniciarTemporizador()">▶️</button>
+          <button class="btn-temp-mini" id="tbtn-pausar" onclick="abrirPausaTemporizador()" style="display:none;">⏸️</button>
+          <button class="btn-temp-mini" id="tbtn-reanudar" onclick="reanudarTemporizador()" style="display:none;">▶️</button>
+          <button class="btn-temp-mini" id="tbtn-reiniciar" onclick="reiniciarTemporizador()" style="display:none;">🔄</button>
+          <button class="btn-temp-mini" id="tbtn-finalizar" onclick="finalizarTemporizador()" style="display:none;">⏹️</button>
+        </div>
+      </div>
+      <div id="hora-fecha-wrap">
+        <div class="h" id="horaDisplay">--:--</div>
+        <div class="f" id="horaFecha">--</div>
+      </div>
       <div class="acciones-cov">
         <button onclick="abrirModalCOV(true)">✏️ COV</button>
       </div>
     </div>`;
   tickHora();
+  renderEstadoTemporizador(); // restaurar el temporizador después del re-render
 }
 
 
