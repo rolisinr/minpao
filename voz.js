@@ -409,7 +409,7 @@ function resumenFinal() {
 /* ── Resumen 2: repite el resumen y guarda solo ── */
 function autoGuardarConResumen() {
   cancelarAutoGuardar();
-  guardarRegistro();
+  guardarRegistro(); bipGuardado();
   hablar(textoResumenCorto() + '. Guardado.');
   volverAReposo();
 }
@@ -425,7 +425,7 @@ function procesarConfirmacion(textoOriginal) {
   if (/\b(eliminar|borrar)\b/.test(t)) { cancelarRegistroEnCurso(); return; }
 
   if (/\b(guardar|guarda|si|confirmar|dale|correcto|ya|listo)\b/.test(t)) {
-    guardarRegistro();
+    guardarRegistro(); bipGuardado();
     hablar('Guardado.');
     volverAReposo();
     return;
@@ -663,13 +663,18 @@ function crearReconocimiento() {
       volverAReposo();
       return;
     }
-    if (/cuantos (llevo|registros|van)/.test(textoNorm)) { responderContadorRegistros(); return; }
+    if (/cuantos (llevo|registros|van|tengo)|conteo/.test(textoNorm)) { responderContadorRegistros(); return; }
+    if (/corregir (ultimo|el ultimo|anterior)/.test(textoNorm)) { corregirUltimoRegistro(); return; }
+    if (/iniciar temporizador|iniciar timer|iniciar reloj/.test(textoNorm)) { iniciarTemporizador(); hablar('Temporizador iniciado.'); return; }
+    if (/pausar (registro|temporizador|timer)/.test(textoNorm)) { pausarConMotivo('Pausa por voz'); hablar('Pausado.'); return; }
+    if (/reanudar (registro|temporizador|timer)/.test(textoNorm)) { reanudarTemporizador(); hablar('Reanudado.'); return; }
+    if (/finalizar (temporizador|timer|hora)/.test(textoNorm)) { finalizarTemporizador(); return; }
 
     // ── Comando global "guardar": si el formulario está completo,
     // funciona en cualquier momento (incluso recién activada la voz) ──
     if (/\bguardar\b/.test(textoNorm) && esperando !== 'confirmacion' && estadoFormulario() === 'completo') {
       cancelarAutoGuardar();
-      guardarRegistro();
+      guardarRegistro(); bipGuardado();
       hablar('Guardado.');
       volverAReposo();
       return;
@@ -703,7 +708,9 @@ function crearReconocimiento() {
     }
 
     // ── Registro en curso ──
-    if (esperando === 'confirmacion') {
+    if (esperando === 'corregir_ultimo') {
+      procesarCorreccionUltimo(texto);
+    } else if (esperando === 'confirmacion') {
       procesarConfirmacion(texto);
     } else if (esperando && esperando.startsWith('campo:')) {
       procesarCorreccionCampo(esperando.split(':')[1], texto);
@@ -765,6 +772,29 @@ function bipActivacion() {
     gain.gain.setValueAtTime(0.25, ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
     osc.start(); osc.stop(ctx.currentTime + 0.18);
+  } catch (e) {}
+}
+
+/* ── Doble tono al guardar registro: dos bips cortos ascendentes ── */
+function bipGuardado() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    // Primer tono (bajo)
+    const osc1 = ctx.createOscillator();
+    const gain1 = ctx.createGain();
+    osc1.connect(gain1); gain1.connect(ctx.destination);
+    osc1.frequency.value = 660;
+    gain1.gain.setValueAtTime(0.25, ctx.currentTime);
+    gain1.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12);
+    osc1.start(ctx.currentTime); osc1.stop(ctx.currentTime + 0.12);
+    // Segundo tono (alto, confirmación)
+    const osc2 = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+    osc2.connect(gain2); gain2.connect(ctx.destination);
+    osc2.frequency.value = 1100;
+    gain2.gain.setValueAtTime(0.3, ctx.currentTime + 0.15);
+    gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.32);
+    osc2.start(ctx.currentTime + 0.15); osc2.stop(ctx.currentTime + 0.32);
   } catch (e) {}
 }
 
@@ -901,6 +931,60 @@ function desactivarModoVoz() {
 function toggleModoVoz() {
   if (!vozActivaAhora) activarConversacionPorVoz();
   else desactivarModoVoz();
+}
+
+/* ══════════════════════════════════════════════════════════════
+   "CORREGIR ÚLTIMO" — edita el último registro guardado hoy
+   ══════════════════════════════════════════════════════════════ */
+let ultimoRegistroEditando = null;
+
+function corregirUltimoRegistro() {
+  const regHoy = dbDelUsuario().filter(r => r.fecha === hoy());
+  if (!regHoy.length) { hablar('No hay registros hoy.'); return; }
+  ultimoRegistroEditando = regHoy[regHoy.length - 1];
+  const resumen = [
+    ultimoRegistroEditando.ruta || '',
+    ultimoRegistroEditando.ocupacion || '',
+    'padrón ' + (ultimoRegistroEditando.padron || ''),
+  ].join(', ');
+  esperando = 'corregir_ultimo';
+  hablar('Último: ' + resumen + '. ¿Qué corrijo?');
+}
+
+function procesarCorreccionUltimo(textoOriginal) {
+  const texto = palabrasANumeros(normalizarVoz(textoOriginal));
+  if (/\b(cancelar|nada|dejalo|dejar)\b/.test(texto)) {
+    esperando = null; ultimoRegistroEditando = null;
+    hablar('Corrección cancelada.'); return;
+  }
+  const campoMap = {
+    ruta:'ruta', ocupacion:'ocupacion', capacidad:'ocupacion',
+    padron:'padron', bajan:'bajan', suben:'suben', espera:'tespera', pax:'paxespera',
+  };
+  let campo = null, valor = null;
+  const codM = texto.match(/codigo\s+(\d)/);
+  if (codM) {
+    const codMap = {'1':'Vacío (0%)','2':'Casi vacío (50%)','3':'Sentados (75%)',
+      '4':'Sentados (100%)','5':'Sentados 100% + De pie 50%','6':'Lleno full (100%)'};
+    campo = 'ocupacion'; valor = codMap[codM[1]] || null;
+  }
+  if (!campo) {
+    for (const [pal, c] of Object.entries(campoMap)) {
+      const m = texto.match(new RegExp(pal + '\\s+(\\S+)'));
+      if (m) { campo = c; valor = m[1]; break; }
+    }
+  }
+  if (!campo) { const n = texto.match(/\b(\d{1,4})\b/); if (n) { campo='padron'; valor=n[1]; } }
+  if (!campo || !valor) { hablar('No entendí. Di el campo y el valor.'); return; }
+
+  if (campo === 'ruta') ultimoRegistroEditando.ruta = valor;
+  else if (campo === 'ocupacion') ultimoRegistroEditando.ocupacion = valor;
+  else if (campo === 'padron') ultimoRegistroEditando.padron = valor;
+  else ultimoRegistroEditando[campo] = valor;
+  try { localStorage.setItem('atu_db', JSON.stringify(db)); } catch (e) {}
+  bipGuardado();
+  hablar('Corregido.');
+  ultimoRegistroEditando = null; esperando = null;
 }
 
 /* ══════════════════════════════════════════════════════════════

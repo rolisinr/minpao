@@ -450,6 +450,9 @@ cursor:pointer;
 .btn-voz.escuchando{background:var(--rojo);animation:pulso 1.2s ease-in-out infinite;}
 .btn-voz.bloqueada{background:var(--rojo);position:relative;z-index:9999;animation:pulso 1.2s ease-in-out infinite;} /* Wake Lock activo: rojo parpadeante y por encima del bloqueo táctil */
 @keyframes pulso{0%,100%{opacity:1;}50%{opacity:.65;}}
+.btn-panel-voz-toggle{width:100%;background:#eceff1;color:#546e7a;border:none;border-radius:8px;
+  padding:9px;font-size:13px;font-weight:700;margin-top:6px;cursor:pointer;transition:.15s;}
+.btn-panel-voz-toggle:active{background:#cfd8dc;}
 
 /* ── OCUPACIÓN ── */
 .occ-list{display:flex;flex-direction:column;gap:4px;}
@@ -1090,20 +1093,26 @@ body.es-admin .solo-admin.flex{display:flex !important;}
     </div>
   </div>
 
-  <div id="voz-indicador" style="min-height:20px;text-align:center;font-size:13px;color:#0d47a1;font-weight:600;margin-top:4px;"></div>
-  <button class="btn-voz" id="btn-modo-voz" style="display:none;" onclick="toggleModoVoz()">🎤 Modo voz</button>
-  <button class="btn-voz" id="btn-wakeword" style="display:none;background:#5e35b1;" onclick="toggleWakeWord()">🗣️ Activación por voz</button>
-  <button class="btn-voz" id="btn-editar-palabra" style="display:none;background:#555;font-size:13px;padding:8px;" onclick="configurarPalabraActivacion()">✏️ Cambiar palabra clave</button>
-  <div id="cont-velocidad-voz" style="display:none;margin-top:6px;">
-    <label style="font-size:12px;color:#555;">Velocidad de voz:</label>
-    <select onchange="cambiarVelocidadVoz(this.value)" style="width:100%;padding:6px;border-radius:6px;border:1px solid #ddd;font-size:13px;">
-      <option value="0.8">Lento</option>
-      <option value="1.0" selected>Normal</option>
-      <option value="1.3">Rápido</option>
-    </select>
+  <!-- ══ PANEL PLEGABLE DE VOZ ══ -->
+  <div id="panel-voz-wrap" style="display:none;">
+    <div id="voz-indicador" style="min-height:20px;text-align:center;font-size:13px;color:#0d47a1;font-weight:600;margin-top:4px;"></div>
+    <button class="btn-voz" id="btn-modo-voz" onclick="toggleModoVoz()">🎤 Modo voz</button>
+    <button class="btn-panel-voz-toggle" id="btn-panel-toggle" onclick="togglePanelVoz()">⚙️ Opciones de voz ▼</button>
+    <div id="panel-voz-contenido" style="display:none;margin-top:4px;">
+      <button class="btn-voz" id="btn-wakeword" style="background:#5e35b1;" onclick="toggleWakeWord()">🗣️ Activación por voz</button>
+      <button class="btn-voz" id="btn-editar-palabra" style="background:#555;font-size:13px;padding:8px;" onclick="configurarPalabraActivacion()">✏️ Cambiar palabra clave</button>
+      <div style="margin-top:6px;">
+        <label style="font-size:12px;color:#555;">Velocidad de voz:</label>
+        <select onchange="cambiarVelocidadVoz(this.value)" style="width:100%;padding:6px;border-radius:6px;border:1px solid #ddd;font-size:13px;">
+          <option value="0.8">Lento</option>
+          <option value="1.0" selected>Normal</option>
+          <option value="1.3">Rápido</option>
+        </select>
+      </div>
+      <button class="btn-voz" id="btn-wakelock" style="background:#37474f;" onclick="toggleWakeLock()">🔒 Mantener pantalla</button>
+      <button class="btn-voz" id="btn-modo-paradero" style="background:#6d4c41;" onclick="toggleModoParadero()">🚦 Modo: Tranquera</button>
+    </div>
   </div>
-  <button class="btn-voz" id="btn-wakelock" style="display:none;background:#37474f;" onclick="toggleWakeLock()">🔒 Mantener pantalla</button>
-  <button class="btn-voz" id="btn-modo-paradero" style="display:none;background:#6d4c41;" onclick="toggleModoParadero()">🚦 Modo: Tranquera</button>
   <button class="btn-guardar" onclick="guardarRegistro()">💾 Guardar registro</button>
 </div>
 <div id="overlay-bloqueo" style="position:fixed;inset:0;background:transparent;display:none;z-index:9998;"></div>
@@ -1423,26 +1432,31 @@ body.es-admin .solo-admin.flex{display:flex !important;}
     <div class="modal-body">
       <div style="display:flex;flex-direction:column;gap:8px;">
         <div class="field">
-          <label>Turno</label>
-          <input type="text" id="m-turno" value="Mañana"/>
+          <label>Turno <span style="font-size:11px;color:#999;">(auto según hora)</span></label>
+          <input type="text" id="m-turno" value="Mañana" readonly style="background:#f5f5f5;"/>
         </div>
-        <div class="field"><label>Franja horaria</label>
-          <select id="m-franja">
-            <option value="08:00 am - 09:00 am">08:00 am - 09:00 am</option>
-            <option value="09:00 am - 10:00 am">09:00 am - 10:00 am</option>
-            <option value="10:00 am - 11:00 am" selected>10:00 am - 11:00 am</option>
-            <option value="11:00 am - 12:00 pm">11:00 am - 12:00 pm</option>
-            <option value="12:00 pm - 01:00 pm">12:00 pm - 01:00 pm</option>
-            <option value="01:00 pm - 02:00 pm">01:00 pm - 02:00 pm</option>
-            <option value="02:00 pm - 03:00 pm">02:00 pm - 03:00 pm</option>
-            <option value="03:00 pm - 04:00 pm">03:00 pm - 04:00 pm</option>
-            <option value="04:00 pm - 05:00 pm">04:00 pm - 05:00 pm</option>
-            <option value="05:00 pm - 06:00 pm">05:00 pm - 06:00 pm</option>
-            <option value="06:00 pm - 07:00 pm">06:00 pm - 07:00 pm</option>
-            <option value="07:00 pm - 08:00 pm">07:00 pm - 08:00 pm</option>
-            <option value="08:00 pm - 09:00 pm">08:00 pm - 09:00 pm</option>
-            <option value="09:00 pm - 10:00 pm">09:00 pm - 10:00 pm</option>
-          </select>
+        <!-- Temporizador (reemplaza la franja horaria) -->
+        <div class="field" id="campo-temporizador">
+          <label>Registro de 1 hora</label>
+          <div id="temporizador-display" style="text-align:center;padding:8px;">
+            <div id="temp-estado" style="font-size:13px;color:#999;margin-bottom:4px;">Sin iniciar</div>
+            <div id="temp-cuenta" style="font-size:32px;font-weight:900;color:var(--azul);font-family:monospace;">60:00</div>
+            <div id="temp-rango" style="font-size:12px;color:#666;margin-top:2px;"></div>
+          </div>
+          <div id="temp-botones" style="display:flex;gap:6px;flex-wrap:wrap;">
+            <button class="btn-admin-tab" id="temp-btn-iniciar" onclick="iniciarTemporizador()" style="flex:1;">▶️ Iniciar</button>
+            <button class="btn-admin-tab" id="temp-btn-pausar" onclick="abrirPausaTemporizador()" style="flex:1;display:none;">⏸️ Pausar</button>
+            <button class="btn-admin-tab" id="temp-btn-reanudar" onclick="reanudarTemporizador()" style="flex:1;display:none;">▶️ Reanudar</button>
+            <button class="btn-admin-tab" id="temp-btn-finalizar" onclick="finalizarTemporizador()" style="flex:1;display:none;">⏹️ Finalizar</button>
+          </div>
+          <div id="temp-pausa-motivo" style="display:none;margin-top:8px;">
+            <label style="font-size:12px;color:#d32f2f;font-weight:700;">Motivo de la pausa:</label>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;">
+              <button class="btn-admin-tab" onclick="pausarConMotivo('Salida a QAP')" style="flex:1;font-size:12px;">🚶 QAP</button>
+              <button class="btn-admin-tab" onclick="pausarConMotivo('Incidente')" style="flex:1;font-size:12px;">⚠️ Incidente</button>
+              <button class="btn-admin-tab" onclick="pausarConMotivo('otro')" style="flex:1;font-size:12px;">✏️ Otro</button>
+            </div>
+          </div>
         </div>
         <div class="field">
           <label>Zona</label>
@@ -5073,19 +5087,20 @@ function verificarCOVDia(){
 
 function abrirModalCOV(closeable=true){
   const cov = cargarCOV() || {};
-  document.getElementById('m-turno').value    = cov.turno    || 'Mañana';
-  document.getElementById('m-franja').value   = cov.franja   || '10:00 am - 11:00 am';
+  // B2: Autocompletar turno según hora (antes de 2pm = Mañana, después = Tarde)
+  const horaActual = new Date().getHours();
+  document.getElementById('m-turno').value = cov.turno || (horaActual < 14 ? 'Mañana' : 'Tarde');
   document.getElementById('m-paradero').value = cov.paradero || '';
   const zs = document.getElementById('m-zona');
   if(cov.zona) for(let i=0;i<zs.options.length;i++) if(zs.options[i].value===cov.zona) zs.selectedIndex=i;
   const ss = document.getElementById('m-sentido');
   if(cov.sentido) for(let i=0;i<ss.options.length;i++) if(ss.options[i].value===cov.sentido) ss.selectedIndex=i;
+  // Restaurar estado visual del temporizador
+  renderEstadoTemporizador();
   document.getElementById('modal-cov').classList.add('activo');
 }
 
 function guardarCOV(){
-  // El nombre COV ya no se pide: se toma del usuario logueado.
-  // La fecha es automática (la del día del registro).
   let nombreUsuario = '';
   try{
     const u = JSON.parse(localStorage.getItem(STORAGE_USUARIO)||'null');
@@ -5095,11 +5110,17 @@ function guardarCOV(){
   const paradero = document.getElementById('m-paradero').value.trim();
   if(!paradero){ toast('⚠️ Ingresa la ubicación/paradero','rojo'); return; }
 
+  // La franja se genera automáticamente desde el temporizador (inicio - fin)
+  const tempDatos = cargarDatosTemporizador();
+  const franja = (tempDatos.horaInicio && tempDatos.horaFin)
+    ? tempDatos.horaInicio + ' - ' + tempDatos.horaFin
+    : (tempDatos.horaInicio ? tempDatos.horaInicio + ' - (en curso)' : 'Sin registrar');
+
   const datos = {
     cov: nombreUsuario,
     fecha: hoy(),
     turno: document.getElementById('m-turno').value.trim(),
-    franja: document.getElementById('m-franja').value.trim(),
+    franja: franja,
     zona: document.getElementById('m-zona').value,
     paradero: paradero,
     sentido: document.getElementById('m-sentido').value,
@@ -5224,8 +5245,8 @@ async function obtenerRutasServidor(corredor){
 function cargarRutas(){
   try{
     const r = JSON.parse(localStorage.getItem('atu_rutas')||'null');
-    return r || ['301','303','305','336','372','SEMIEXP'];
-  }catch(e){ return ['301','303','305','336','372','SEMIEXP']; }
+    return r || []; // vacío hasta que lleguen las rutas reales del backend
+  }catch(e){ return []; }
 }
 function guardarRutas(){ localStorage.setItem('atu_rutas', JSON.stringify(rutas)); }
 
@@ -5496,6 +5517,8 @@ function _finalizarGuardarRegistro(reg){
   enviarConteoFecha(reg.fecha || hoy()); // actualizar conteo en servidor (segundo plano)
   limpiarFormBus();
   toast('✅ Registro guardado','verde');
+  // B4: ¿primer registro del día? → preguntar si iniciar temporizador
+  verificarInicioTemporizadorAlGuardar();
 }
 
 function limpiarFormBus(){
@@ -5932,7 +5955,18 @@ async function _ejecutarGeneracionOficial(usuario, enc, regs){
         ruta: r.ruta, ocupacion: r.ocupacion,
         suben: r.suben, bajan: r.bajan,
         tespera: r.tespera, paxespera: r.paxespera
-      }))
+      })),
+      // B11: Notas de pausas del temporizador (para el PDF)
+      notasPausas: (function(){
+        try {
+          const td = cargarDatosTemporizador();
+          if (!td || !td.pausas || !td.pausas.length) return [];
+          return td.pausas.map(p => ({
+            motivo: p.motivo || 'Pausa',
+            hora: p.hora || '',
+          }));
+        } catch(e) { return []; }
+      })()
     };
 
     const res = await fetch(API_URL, {
@@ -5945,6 +5979,7 @@ async function _ejecutarGeneracionOficial(usuario, enc, regs){
 
     if(data.ok){
       toast('✅ Documento generado en la nube','verde');
+      localStorage.removeItem('minpao_pendiente_exportar'); // limpiar aviso de pendiente
     }else{
       if(data.mensaje === 'LIMITE_ALCANZADO'){
         toast('🚫 Límite diario alcanzado','rojo');
@@ -6252,13 +6287,281 @@ verificarSesion();
 // para no depender de un localStorage que todavía no se actualizó.
 function actualizarBotonesVoz(vozActiva){
   const activo = String(vozActiva||'').toUpperCase() === 'SI';
-  const ids = ['btn-modo-voz','btn-wakeword','btn-editar-palabra','btn-wakelock','btn-modo-paradero'];
-  ids.forEach(id => {
-    const el = document.getElementById(id);
-    if(el) el.style.display = activo ? 'block' : 'none';
-  });
-  const contVel = document.getElementById('cont-velocidad-voz');
-  if(contVel) contVel.style.display = activo ? 'block' : 'none';
+  const panel = document.getElementById('panel-voz-wrap');
+  if(panel) panel.style.display = activo ? 'block' : 'none';
+}
+
+function togglePanelVoz(){
+  const contenido = document.getElementById('panel-voz-contenido');
+  const btn = document.getElementById('btn-panel-toggle');
+  if(!contenido) return;
+  const abierto = contenido.style.display !== 'none';
+  contenido.style.display = abierto ? 'none' : 'block';
+  btn.textContent = abierto ? '⚙️ Opciones de voz ▼' : '⚙️ Opciones de voz ▲';
+}
+
+
+/* ══════════════════════════════════════════════════════════════
+   TEMPORIZADOR DE HORA DE REGISTRO (Fase B)
+   - 1 hora de registro, con pausa/reanudación
+   - Franja horaria se calcula automáticamente (inicio - fin real)
+   - Avisos a los 10 min finales y al terminar
+   - Notas de pausas guardadas para el PDF
+   ══════════════════════════════════════════════════════════════ */
+const TEMP_KEY = 'minpao_temporizador';
+const TEMP_DURACION = 60 * 60; // 60 minutos en segundos
+
+function cargarDatosTemporizador() {
+  try { return JSON.parse(localStorage.getItem(TEMP_KEY) || 'null') || {}; } catch(e) { return {}; }
+}
+function guardarDatosTemporizador(d) {
+  localStorage.setItem(TEMP_KEY, JSON.stringify(d));
+}
+
+function formatoHHMM(date) {
+  if (!date) return '';
+  const d = new Date(date);
+  let h = d.getHours(), m = d.getMinutes();
+  const suf = h >= 12 ? 'pm' : 'am';
+  if (h > 12) h -= 12; if (h === 0) h = 12;
+  return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m + ' ' + suf;
+}
+
+let _tempInterval = null;
+let _avisoDiezMin = false;
+
+function iniciarTemporizador() {
+  const d = cargarDatosTemporizador();
+  if (d.estado === 'corriendo' || d.estado === 'pausado') {
+    toast('⚠️ El temporizador ya está activo', 'rojo'); return;
+  }
+  const ahora = Date.now();
+  const datos = {
+    estado: 'corriendo',
+    horaInicio: formatoHHMM(ahora),
+    horaFin: '',
+    tsInicio: ahora,
+    segundosRestantes: TEMP_DURACION,
+    tsUltimoTick: ahora,
+    pausas: [], // [{motivo, hora, duracion}]
+    fecha: hoy(),
+  };
+  // B2: autocompletar turno
+  const horaActual = new Date().getHours();
+  document.getElementById('m-turno').value = horaActual < 14 ? 'Mañana' : 'Tarde';
+
+  guardarDatosTemporizador(datos);
+  _avisoDiezMin = false;
+  arrancarTickTemporizador();
+  renderEstadoTemporizador();
+  toast('⏱️ Temporizador iniciado', 'verde');
+}
+
+function abrirPausaTemporizador() {
+  document.getElementById('temp-pausa-motivo').style.display = 'block';
+}
+
+function pausarConMotivo(motivo) {
+  if (motivo === 'otro') {
+    motivo = prompt('Escribe el motivo de la pausa:');
+    if (!motivo || !motivo.trim()) return;
+    motivo = motivo.trim();
+  }
+  const d = cargarDatosTemporizador();
+  if (d.estado !== 'corriendo') return;
+
+  // Calcular segundos consumidos desde el último tick
+  const ahora = Date.now();
+  const transcurrido = Math.floor((ahora - d.tsUltimoTick) / 1000);
+  d.segundosRestantes = Math.max(0, d.segundosRestantes - transcurrido);
+  d.estado = 'pausado';
+  d.tsUltimoTick = ahora;
+  d.pausas.push({ motivo: motivo, hora: formatoHHMM(ahora), tsInicio: ahora });
+  guardarDatosTemporizador(d);
+  detenerTickTemporizador();
+  document.getElementById('temp-pausa-motivo').style.display = 'none';
+  renderEstadoTemporizador();
+  toast('⏸️ Pausado: ' + motivo);
+}
+
+function reanudarTemporizador() {
+  const d = cargarDatosTemporizador();
+  if (d.estado !== 'pausado') return;
+  const ahora = Date.now();
+  // Registrar duración de la pausa
+  if (d.pausas.length) {
+    const ultPausa = d.pausas[d.pausas.length - 1];
+    if (!ultPausa.duracionSeg) {
+      ultPausa.duracionSeg = Math.floor((ahora - ultPausa.tsInicio) / 1000);
+    }
+  }
+  d.estado = 'corriendo';
+  d.tsUltimoTick = ahora;
+  guardarDatosTemporizador(d);
+  arrancarTickTemporizador();
+  renderEstadoTemporizador();
+  toast('▶️ Reanudado');
+}
+
+function finalizarTemporizador() {
+  const d = cargarDatosTemporizador();
+  const ahora = Date.now();
+  d.estado = 'finalizado';
+  d.horaFin = formatoHHMM(ahora);
+  d.segundosRestantes = 0;
+  // Si estaba pausado, cerrar la última pausa
+  if (d.pausas.length) {
+    const ultPausa = d.pausas[d.pausas.length - 1];
+    if (!ultPausa.duracionSeg) ultPausa.duracionSeg = Math.floor((ahora - ultPausa.tsInicio) / 1000);
+  }
+  guardarDatosTemporizador(d);
+  detenerTickTemporizador();
+  renderEstadoTemporizador();
+
+  // Actualizar la franja en el COV guardado
+  const cov = cargarCOV();
+  if (cov) {
+    cov.franja = d.horaInicio + ' - ' + d.horaFin;
+    localStorage.setItem('atu_cov', JSON.stringify(cov));
+  }
+
+  toast('⏹️ Hora de registro finalizada', 'verde');
+  // B8: mostrar vista previa para generar
+  setTimeout(() => {
+    if (typeof generarExcelOficialApp === 'function') {
+      if (confirm('La hora de registro terminó.\n\n¿Deseas generar el documento oficial ahora?')) {
+        generarExcelOficialApp();
+      } else {
+        toast('📋 Puedes generarlo después desde Exportar');
+        // B9: marcar como pendiente para recordar mañana
+        localStorage.setItem('minpao_pendiente_exportar', hoy());
+      }
+    }
+  }, 500);
+}
+
+function arrancarTickTemporizador() {
+  detenerTickTemporizador();
+  _tempInterval = setInterval(tickTemporizador, 1000);
+}
+function detenerTickTemporizador() {
+  if (_tempInterval) { clearInterval(_tempInterval); _tempInterval = null; }
+}
+
+function tickTemporizador() {
+  const d = cargarDatosTemporizador();
+  if (!d || d.estado !== 'corriendo') { detenerTickTemporizador(); return; }
+
+  const ahora = Date.now();
+  const transcurrido = Math.floor((ahora - d.tsUltimoTick) / 1000);
+  d.segundosRestantes = Math.max(0, d.segundosRestantes - transcurrido);
+  d.tsUltimoTick = ahora;
+  guardarDatosTemporizador(d);
+
+  // Actualizar display
+  const min = Math.floor(d.segundosRestantes / 60);
+  const seg = d.segundosRestantes % 60;
+  const el = document.getElementById('temp-cuenta');
+  if (el) el.textContent = (min < 10 ? '0' : '') + min + ':' + (seg < 10 ? '0' : '') + seg;
+
+  // B5: Aviso de 10 minutos restantes
+  if (d.segundosRestantes <= 600 && !_avisoDiezMin) {
+    _avisoDiezMin = true;
+    toast('⏱️ Faltan 10 minutos');
+    if (typeof vozActivaAhora !== 'undefined' && vozActivaAhora) {
+      hablar('Faltan diez minutos.');
+    }
+  }
+
+  // B5: Terminó la hora
+  if (d.segundosRestantes <= 0) {
+    finalizarTemporizador();
+    if (typeof vozActivaAhora !== 'undefined' && vozActivaAhora) {
+      hablar('Se terminó la hora de registro.');
+    }
+  }
+}
+
+function renderEstadoTemporizador() {
+  const d = cargarDatosTemporizador();
+  const elEstado = document.getElementById('temp-estado');
+  const elCuenta = document.getElementById('temp-cuenta');
+  const elRango = document.getElementById('temp-rango');
+  const btnIniciar = document.getElementById('temp-btn-iniciar');
+  const btnPausar = document.getElementById('temp-btn-pausar');
+  const btnReanudar = document.getElementById('temp-btn-reanudar');
+  const btnFinalizar = document.getElementById('temp-btn-finalizar');
+  if (!elEstado) return;
+
+  // Reset all buttons
+  [btnIniciar, btnPausar, btnReanudar, btnFinalizar].forEach(b => { if(b) b.style.display = 'none'; });
+
+  if (!d || !d.estado || d.estado === 'finalizado') {
+    elEstado.textContent = d && d.estado === 'finalizado' ? '✅ Finalizado' : 'Sin iniciar';
+    elEstado.style.color = d && d.estado === 'finalizado' ? '#2e7d32' : '#999';
+    const min = Math.floor((d ? d.segundosRestantes : TEMP_DURACION) / 60);
+    const seg = (d ? d.segundosRestantes : TEMP_DURACION) % 60;
+    elCuenta.textContent = (min < 10 ? '0' : '') + min + ':' + (seg < 10 ? '0' : '') + seg;
+    elRango.textContent = d && d.horaInicio ? d.horaInicio + ' - ' + (d.horaFin || '...') : '';
+    if (d && d.estado === 'finalizado' && d.fecha !== hoy()) {
+      // Día nuevo: resetear
+      btnIniciar.style.display = 'flex';
+      elEstado.textContent = 'Sin iniciar';
+      elEstado.style.color = '#999';
+      elCuenta.textContent = '60:00';
+      elRango.textContent = '';
+    } else if (!d || !d.estado) {
+      btnIniciar.style.display = 'flex';
+    }
+    return;
+  }
+
+  if (d.estado === 'corriendo') {
+    elEstado.textContent = '🔴 En curso';
+    elEstado.style.color = '#d32f2f';
+    btnPausar.style.display = 'flex';
+    btnFinalizar.style.display = 'flex';
+    // Recalcular display
+    const ahora = Date.now();
+    const transcurrido = Math.floor((ahora - d.tsUltimoTick) / 1000);
+    const rest = Math.max(0, d.segundosRestantes - transcurrido);
+    const min = Math.floor(rest / 60), seg = rest % 60;
+    elCuenta.textContent = (min < 10 ? '0' : '') + min + ':' + (seg < 10 ? '0' : '') + seg;
+    elRango.textContent = d.horaInicio + ' - ...';
+    arrancarTickTemporizador();
+  }
+
+  if (d.estado === 'pausado') {
+    elEstado.textContent = '⏸️ Pausado';
+    elEstado.style.color = '#e65100';
+    const min = Math.floor(d.segundosRestantes / 60), seg = d.segundosRestantes % 60;
+    elCuenta.textContent = (min < 10 ? '0' : '') + min + ':' + (seg < 10 ? '0' : '') + seg;
+    elRango.textContent = d.horaInicio + ' - (pausado)';
+    btnReanudar.style.display = 'flex';
+    btnFinalizar.style.display = 'flex';
+  }
+}
+
+// B4: Al guardar el primer registro del día, preguntar si iniciar el temporizador
+function verificarInicioTemporizadorAlGuardar() {
+  const d = cargarDatosTemporizador();
+  if (d && d.estado && d.fecha === hoy()) return; // ya está activo o finalizado hoy
+  const regHoy = dbDelUsuario().filter(r => r.fecha === hoy());
+  if (regHoy.length === 1) { // recién se guardó el primero del día
+    setTimeout(() => {
+      if (confirm('Primer registro del día.\n¿Iniciar el temporizador de 1 hora?')) {
+        iniciarTemporizador();
+      }
+    }, 300);
+  }
+}
+
+// B9: Al abrir la app, avisar si ayer quedó pendiente exportar
+function verificarPendienteExportar() {
+  const pendiente = localStorage.getItem('minpao_pendiente_exportar');
+  if (pendiente && pendiente !== hoy()) {
+    toast('📋 Ayer no exportaste tus registros. Ve a Exportar para generarlos.', 'rojo');
+  }
 }
 
 
@@ -6268,6 +6571,22 @@ document.addEventListener('contextmenu', function(e){
   const tag = e.target.tagName;
   if(tag !== 'INPUT' && tag !== 'TEXTAREA') e.preventDefault();
 });
+
+// Al cargar: restaurar estado del temporizador si estaba corriendo, resetear si es otro día, y verificar pendientes
+(function initTemporizador(){
+  const d = cargarDatosTemporizador();
+  if (d && d.fecha && d.fecha !== hoy()) {
+    // Día nuevo: si el temporizador de ayer quedó activo, lo finaliza limpio
+    if (d.estado === 'corriendo' || d.estado === 'pausado') {
+      d.estado = 'finalizado';
+      d.horaFin = d.horaFin || 'N/A';
+      d.segundosRestantes = 0;
+      guardarDatosTemporizador(d);
+    }
+  }
+  if (d && d.estado === 'corriendo' && d.fecha === hoy()) arrancarTickTemporizador();
+  verificarPendienteExportar();
+})();
 </script>
 <script src="voz.js"></script>
 
