@@ -4986,28 +4986,111 @@ function importarDesdeExcel(file){
       const hoja = wb.Sheets[wb.SheetNames[0]];
       const filas = XLSX.utils.sheet_to_json(hoja, {header:1, defval:''});
       _importPreview = [];
-      // Saltar la primera fila (encabezados) y leer cada fila como registro
-      for(let i=1; i<filas.length; i++){
-        const c = filas[i];
-        if(!c || c.length < 4 || !String(c[0]).trim()) continue;
-        _importPreview.push({
-          id: Date.now() + i,
-          hora: String(c[0]||'').trim(),
-          ruta: String(c[1]||'').trim(),
-          ocupacion: String(c[2]||'').trim(),
-          padron: String(c[3]||'').trim(),
-          placa: String(c[4]||'').trim(),
-          suben: String(c[5]||'0').trim(),
-          bajan: String(c[6]||'0').trim(),
-          tespera: String(c[7]||'0').trim(),
-          paxespera: String(c[8]||'0').trim(),
-          fecha: hoy(),
-          ts: new Date().toISOString(),
+
+      // ── Detectar formato: viejo (con cabecera COV) o nuevo (directo) ──
+      const esFormatoViejo = filas.some(f => String(f[1]||'').includes('Nombres COV') || String(f[1]||'').includes('Turno:'));
+
+      if (esFormatoViejo) {
+        // ── FORMATO VIEJO (Excel básico de Azulito) ──
+        // Cabecera COV en filas 2-8, registros desde fila 12+
+        let fechaExcel = hoy();
+        let covData = {};
+        const OCUP_NOMBRES = ['Vacío (0%)','Casi vacío (50%)','Sentados (75%)','Sentados (100%)','Sentados 100% + De pie 50%','Lleno full (100%)'];
+
+        // Leer cabecera
+        filas.forEach(f => {
+          const clave = String(f[1]||'').trim().toLowerCase();
+          const valor = String(f[2]||'').trim();
+          if (clave.includes('fecha')) fechaExcel = valor;
+          if (clave.includes('turno')) covData.turno = valor;
+          if (clave.includes('franja')) covData.franja = valor;
+          if (clave.includes('ubicación') || clave.includes('paradero')) covData.paradero = valor;
+          if (clave.includes('sentido')) covData.sentido = valor;
+          if (clave.includes('zona')) covData.zona = valor;
+          if (clave.includes('nombres') || clave.includes('cov')) covData.cov = valor;
         });
+
+        // Encontrar la fila de encabezados de la tabla (tiene "Hora" en columna B)
+        let filaInicio = -1;
+        for (let i = 0; i < filas.length; i++) {
+          if (String(filas[i][1]||'').trim().toLowerCase() === 'hora') { filaInicio = i + 1; break; }
+        }
+        if (filaInicio < 0) { toast('⚠️ No encontré la tabla de registros en el Excel','rojo'); return; }
+
+        // Leer cada fila de registro
+        for (let i = filaInicio; i < filas.length; i++) {
+          const c = filas[i];
+          const hora = String(c[1]||'').trim();
+          if (!hora || hora === '') continue;
+
+          // Placa y padrón vienen combinados: "ALD-853 / 84"
+          const placaPadron = String(c[2]||'').trim();
+          let placa = '', padron = '';
+          if (placaPadron.includes('/')) {
+            const partes = placaPadron.split('/').map(s => s.trim());
+            placa = partes[0] || '';
+            padron = partes[1] || '';
+          } else {
+            padron = placaPadron; // si no tiene /, asumir que es solo padrón
+          }
+
+          const ruta = String(c[3]||'').trim();
+
+          // Ocupación: buscar la "X" en columnas 4-9 (índices E a J)
+          let ocupacion = '';
+          for (let col = 4; col <= 9; col++) {
+            if (String(c[col]||'').trim().toUpperCase() === 'X') {
+              ocupacion = OCUP_NOMBRES[col - 4] || '';
+              break;
+            }
+          }
+
+          _importPreview.push({
+            id: Date.now() + i,
+            hora: hora,
+            ruta: ruta,
+            ocupacion: ocupacion,
+            padron: padron,
+            placa: placa,
+            suben: String(c[10]||'0').trim(),
+            bajan: String(c[11]||'0').trim(),
+            tespera: String(c[12]||'0').trim(),
+            paxespera: String(c[13]||'0').trim(),
+            fecha: fechaExcel,
+            ts: new Date().toISOString(),
+            cov: covData.cov || '',
+            turno: covData.turno || '',
+            franja: covData.franja || '',
+            paradero: covData.paradero || '',
+            sentido: covData.sentido || '',
+            zona: covData.zona || '',
+          });
+        }
+      } else {
+        // ── FORMATO NUEVO (Excel rápido de minpao actual) ──
+        for (let i = 1; i < filas.length; i++) {
+          const c = filas[i];
+          if (!c || c.length < 4 || !String(c[0]).trim()) continue;
+          _importPreview.push({
+            id: Date.now() + i,
+            hora: String(c[0]||'').trim(),
+            ruta: String(c[1]||'').trim(),
+            ocupacion: String(c[2]||'').trim(),
+            padron: String(c[3]||'').trim(),
+            placa: String(c[4]||'').trim(),
+            suben: String(c[5]||'0').trim(),
+            bajan: String(c[6]||'0').trim(),
+            tespera: String(c[7]||'0').trim(),
+            paxespera: String(c[8]||'0').trim(),
+            fecha: hoy(),
+            ts: new Date().toISOString(),
+          });
+        }
       }
-      if(!_importPreview.length){ toast('⚠️ No se encontraron registros en el Excel','rojo'); return; }
+
+      if (!_importPreview.length) { toast('⚠️ No se encontraron registros en el Excel','rojo'); return; }
       mostrarVistaPrevia();
-    }catch(err){
+    } catch(err) {
       console.error(err);
       toast('❌ Error al leer el Excel','rojo');
     }
