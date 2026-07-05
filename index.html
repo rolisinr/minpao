@@ -1216,9 +1216,9 @@ body.es-admin .solo-admin.flex{display:flex !important;}
     </div>
     <div class="btn-backup-row">
       <button class="btn-backup dl" onclick="descargarBackup()">💾 Descargar backup .txt</button>
-      <button class="btn-backup imp" onclick="document.getElementById('inp-backup').click()">📂 Importar backup .txt</button>
+      <button class="btn-backup imp" onclick="document.getElementById('inp-backup').click()">📂 Importar backup (.txt o .xlsx)</button>
     </div>
-    <input type="file" id="inp-backup" accept=".txt" style="display:none" onchange="importarBackup(this)"/>
+    <input type="file" id="inp-backup" accept=".txt,.xlsx,.xls" style="display:none" onchange="importarBackup(this)"/>
     <p style="font-size:11px;color:#999;">Al importar, solo se recuperan registros que no hayas eliminado del historial.</p>
   </div>
 
@@ -4949,37 +4949,174 @@ function descargarBackup(){
   toast('💾 Backup descargado','verde');
 }
 
+/* ══════════════════════════════════════════════════════════════
+   IMPORTAR REGISTROS — con vista previa, soporte .txt y .xlsx,
+   y opciones de agregar/reemplazar/omitir
+   ══════════════════════════════════════════════════════════════ */
+let _importPreview = []; // registros leídos del archivo, pendientes de confirmar
+
 function importarBackup(input){
   const file = input.files[0]; if(!file) return;
   input.value='';
+  const nombre = file.name.toLowerCase();
+
+  if(nombre.endsWith('.xlsx') || nombre.endsWith('.xls')){
+    importarDesdeExcel(file);
+  } else {
+    importarDesdeTxt(file);
+  }
+}
+
+function importarDesdeTxt(file){
   const reader = new FileReader();
   reader.onload = e => {
     const lineas = e.target.result.split('\n').map(l=>l.trim()).filter(Boolean);
-    const idsActivos = new Set(db.map(r=>String(r.id)));
-    let recuperados = 0;
-
-    lineas.forEach(linea => {
-      const reg = lineaABackupReg(linea);
-      if(!reg) return;
-      // Solo recuperar si el ID aún existe en el historial (no fue eliminado)
-      if(!idsActivos.has(String(reg.id))) return;
-      // Verificar que no esté duplicado en db
-      const yaExiste = db.some(r=>String(r.id)===String(reg.id));
-      if(yaExiste) return;
-      // Convertir id a número si es posible
-      reg.id = Number(reg.id) || reg.id;
-      db.push(reg);
-      recuperados++;
-    });
-
-    if(recuperados > 0){
-      guardarDB(); actualizarContador();
-      toast(`✅ ${recuperados} registro(s) recuperados`,'verde');
-    } else {
-      toast('ℹ️ No hay registros nuevos que recuperar');
-    }
+    _importPreview = lineas.map(l => lineaABackupReg(l)).filter(Boolean);
+    if(!_importPreview.length){ toast('⚠️ No se encontraron registros en el archivo','rojo'); return; }
+    mostrarVistaPrevia();
   };
   reader.readAsText(file);
+}
+
+function importarDesdeExcel(file){
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb = XLSX.read(e.target.result, {type:'array'});
+      const hoja = wb.Sheets[wb.SheetNames[0]];
+      const filas = XLSX.utils.sheet_to_json(hoja, {header:1, defval:''});
+      _importPreview = [];
+      // Saltar la primera fila (encabezados) y leer cada fila como registro
+      for(let i=1; i<filas.length; i++){
+        const c = filas[i];
+        if(!c || c.length < 4 || !String(c[0]).trim()) continue;
+        _importPreview.push({
+          id: Date.now() + i,
+          hora: String(c[0]||'').trim(),
+          ruta: String(c[1]||'').trim(),
+          ocupacion: String(c[2]||'').trim(),
+          padron: String(c[3]||'').trim(),
+          placa: String(c[4]||'').trim(),
+          suben: String(c[5]||'0').trim(),
+          bajan: String(c[6]||'0').trim(),
+          tespera: String(c[7]||'0').trim(),
+          paxespera: String(c[8]||'0').trim(),
+          fecha: hoy(),
+          ts: new Date().toISOString(),
+        });
+      }
+      if(!_importPreview.length){ toast('⚠️ No se encontraron registros en el Excel','rojo'); return; }
+      mostrarVistaPrevia();
+    }catch(err){
+      console.error(err);
+      toast('❌ Error al leer el Excel','rojo');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function clasificarRegistroImport(reg){
+  // Buscar duplicado por fecha+hora+padrón+ruta (criterio práctico)
+  const dup = db.find(r =>
+    r.fecha === reg.fecha && r.hora === reg.hora &&
+    String(r.padron) === String(reg.padron) && r.ruta === reg.ruta
+  );
+  if(dup) return { estado:'duplicado', existente:dup };
+  return { estado:'nuevo', existente:null };
+}
+
+function mostrarVistaPrevia(){
+  let nuevos=0, duplicados=0;
+  let filas = _importPreview.map((reg,i) => {
+    const cl = clasificarRegistroImport(reg);
+    if(cl.estado==='nuevo') nuevos++; else duplicados++;
+    return `<tr style="background:${cl.estado==='nuevo'?'#e8f5e9':'#fff3e0'};">
+      <td style="font-size:11px;padding:4px;">${cl.estado==='nuevo'?'🟢':'🟡'}</td>
+      <td style="font-size:11px;padding:4px;">${reg.fecha||''}</td>
+      <td style="font-size:11px;padding:4px;">${reg.hora||''}</td>
+      <td style="font-size:11px;padding:4px;">${reg.ruta||''}</td>
+      <td style="font-size:11px;padding:4px;">${reg.ocupacion||''}</td>
+      <td style="font-size:11px;padding:4px;">${reg.padron||''}</td>
+    </tr>`;
+  }).join('');
+
+  const html = `
+    <div style="margin-bottom:8px;font-size:13px;">
+      <b>${_importPreview.length}</b> registros encontrados:
+      <span style="color:#2e7d32;">🟢 ${nuevos} nuevos</span> ·
+      <span style="color:#e65100;">🟡 ${duplicados} duplicados</span>
+    </div>
+    <div style="max-height:250px;overflow-y:auto;border:1px solid #ddd;border-radius:6px;">
+      <table style="width:100%;border-collapse:collapse;">
+        <tr style="background:#0d47a1;color:#fff;">
+          <th style="padding:4px;font-size:11px;"></th>
+          <th style="padding:4px;font-size:11px;">Fecha</th>
+          <th style="padding:4px;font-size:11px;">Hora</th>
+          <th style="padding:4px;font-size:11px;">Ruta</th>
+          <th style="padding:4px;font-size:11px;">Ocup.</th>
+          <th style="padding:4px;font-size:11px;">Padrón</th>
+        </tr>
+        ${filas}
+      </table>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:6px;margin-top:10px;">
+      <button class="btn-admin-tab activo" onclick="ejecutarImport('nuevos')" style="padding:10px;">
+        🟢 Agregar solo los nuevos (${nuevos})
+      </button>
+      ${duplicados > 0 ? `
+      <button class="btn-admin-tab" onclick="ejecutarImport('reemplazar')" style="padding:10px;">
+        🟡 Reemplazar duplicados + agregar nuevos (${_importPreview.length})
+      </button>
+      <button class="btn-admin-tab" onclick="ejecutarImport('todos')" style="padding:10px;">
+        📥 Agregar todos sin verificar (${_importPreview.length})
+      </button>` : ''}
+      <button class="btn-admin-tab" onclick="cerrarModal('modal-import-preview')" style="padding:10px;background:#ffebee;color:#c62828;">
+        ❌ Cancelar
+      </button>
+    </div>`;
+
+  // Crear/mostrar modal
+  let modal = document.getElementById('modal-import-preview');
+  if(!modal){
+    modal = document.createElement('div');
+    modal.id = 'modal-import-preview';
+    modal.className = 'overlay';
+    modal.innerHTML = '<div class="modal" style="max-width:95vw;"><div class="modal-header"><h2>📋 Vista previa de importación</h2><button class="modal-close" onclick="cerrarModal(\'modal-import-preview\')">✕</button></div><div class="modal-body" id="import-preview-body"></div></div>';
+    document.body.appendChild(modal);
+  }
+  document.getElementById('import-preview-body').innerHTML = html;
+  modal.classList.add('activo');
+}
+
+function ejecutarImport(modo){
+  let agregados=0, reemplazados=0, omitidos=0;
+
+  _importPreview.forEach(reg => {
+    const cl = clasificarRegistroImport(reg);
+    reg.id = Number(reg.id) || reg.id;
+
+    if(cl.estado === 'nuevo'){
+      db.push(reg); agregados++;
+    } else if(modo === 'nuevos'){
+      omitidos++;
+    } else if(modo === 'reemplazar'){
+      // Reemplazar: actualizar el registro existente
+      const idx = db.indexOf(cl.existente);
+      if(idx >= 0){ db[idx] = reg; reemplazados++; }
+      else { db.push(reg); agregados++; }
+    } else { // todos
+      db.push(reg); agregados++;
+    }
+  });
+
+  guardarDB(); actualizarContador();
+  cerrarModal('modal-import-preview');
+
+  let msg = `✅ ${agregados} agregado(s)`;
+  if(reemplazados) msg += `, ${reemplazados} reemplazado(s)`;
+  if(omitidos) msg += `, ${omitidos} omitido(s)`;
+  toast(msg, 'verde');
+  _importPreview = [];
 }
 
 /* ══ HORA ══ */
@@ -5345,6 +5482,8 @@ function fmtPlaca(inp){
 function guardarRegistro(){
   if(!estado.ruta){ toast('⚠️ Selecciona una ruta','rojo'); return; }
   if(!estado.ocupacion){ toast('⚠️ Selecciona la ocupación visual','rojo'); return; }
+  const padronCheck = document.getElementById('f-padron').value.trim();
+  if(!padronCheck){ toast('⚠️ Ingresa el padrón','rojo'); return; }
   const cov = cargarCOV();
   if(!cov){ toast('⚠️ Completa los datos COV primero','rojo'); abrirModalCOV(false); return; }
 
