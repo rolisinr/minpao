@@ -1010,6 +1010,7 @@ body.es-admin .solo-admin.flex{display:flex !important;}
   <button class="nav-tab" onclick="irA('exportar')"><span class="nav-ico">📤</span>Exportar</button>
   <button class="nav-tab" onclick="irA('reportar')"><span class="nav-ico">💬</span>Reportar</button>
   <button class="nav-tab solo-admin flex" onclick="irA('admin')"><span class="nav-ico">🛠️</span>Admin</button>
+  <button class="nav-tab solo-ia" onclick="irA('ia')" style="display:none;"><span class="nav-ico">🤖</span>IA</button>
   <button class="nav-tab" onclick="abrirMiPerfil()"><span class="nav-ico">👤</span>Mi perfil</button>
 </div>
 
@@ -1404,6 +1405,53 @@ body.es-admin .solo-admin.flex{display:flex !important;}
     <h3>👤 Mi Perfil</h3>
     <div id="perfil-info"></div>
   </div>
+</div>
+
+<!-- ══ PÁGINA IA ══ -->
+<div class="page" id="page-ia">
+
+  <!-- Configuración de clave (solo admin) -->
+  <div class="card solo-admin">
+    <h3>🔑 Clave de API (Admin)</h3>
+    <p style="font-size:12px;color:#666;margin-bottom:8px;">
+      Esta clave se comparte automáticamente con los usuarios que tengan "IA habilitada".
+      Se guarda en la nube, no en cada celular.
+    </p>
+    <div style="display:flex;gap:6px;margin-top:4px;">
+      <input type="password" id="ia-key-input" placeholder="Pega tu clave de Gemini aquí"
+        style="flex:1;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px;"/>
+      <button class="btn-admin-tab activo" onclick="guardarGeminiKeyAdmin()" style="padding:8px 14px;font-size:12px;">
+        💾 Guardar
+      </button>
+    </div>
+    <div id="ia-key-estado-admin" style="font-size:11px;margin-top:4px;color:#999;"></div>
+  </div>
+
+  <!-- Estado (todos los usuarios) -->
+  <div class="card">
+    <h3>🤖 Inteligencia Artificial</h3>
+    <p style="font-size:13px;color:#666;margin-bottom:10px;">
+      Minpao usa IA (Google Gemini) para responder preguntas y ayudarte durante el turno.
+      Activa el modo voz y pregunta lo que quieras cuando estés en reposo.
+    </p>
+    <div id="ia-estado-info" style="font-size:13px;color:#666;margin-bottom:10px;">
+      Verificando estado...
+    </div>
+    <button class="btn-admin-tab" onclick="probarConexionGemini()" style="width:100%;padding:10px;">
+      🧪 Probar conexión
+    </button>
+  </div>
+
+  <!-- Próximamente -->
+  <div class="card" style="opacity:.6;">
+    <h3>🚀 Próximamente</h3>
+    <p style="font-size:12px;color:#999;">
+      Análisis inteligente de registros · Resúmenes automáticos del día ·
+      Detección de patrones · Consultas avanzadas por voz ·
+      Modo conversacional
+    </p>
+  </div>
+
 </div>
 
 <!-- ══ MODAL NUEVO PADRÓN ══ -->
@@ -2707,8 +2755,16 @@ if(!usuarioGuardado){
           usuarioActual.nivel = String(data.nivel||'NORMAL').toUpperCase();
           usuarioActual.corredor = data.corredorAsignado || usuarioActual.corredor;
           usuarioActual.vozActiva = String(data.vozActiva||'NO').toUpperCase();
+          usuarioActual.iaActiva = String(data.iaActiva||'NO').toUpperCase();
           localStorage.setItem(STORAGE_USUARIO, JSON.stringify(usuarioActual));
         }catch(e){ console.error(e); }
+
+        // Guardar clave de Gemini si el servidor la envió (usuario con IA activa)
+        if (data.geminiKey) {
+          localStorage.setItem('minpao_gemini_key', data.geminiKey);
+        } else if (String(data.iaActiva||'').toUpperCase() !== 'SI') {
+          localStorage.removeItem('minpao_gemini_key'); // sin permiso = sin clave
+        }
 
         // 4.1: Restaurar racha del servidor si es mayor que la local
         try {
@@ -2723,6 +2779,9 @@ if(!usuarioGuardado){
 
         // Mostrar/ocultar los botones de modo voz según el permiso recién actualizado
         actualizarBotonesVoz(data.vozActiva);
+
+        // Mostrar/ocultar pestaña IA según permiso
+        actualizarVisibilidadIA(data.iaActiva);
 
         // Mostrar/ocultar elementos solo-admin según nivel del usuario
         aplicarVisibilidadAdmin();
@@ -3470,6 +3529,11 @@ function _renderTarjetaUsuario(u){
         <input type="checkbox" ${u.vozActiva==='SI'?'checked':''}
           onchange="adminToggleConfig('${u.idUsuario}','vozActiva',this.checked?'SI':'NO')">
         🎤 Voz habilitada
+      </label>
+      <label style="display:flex;align-items:center;gap:4px;background:#fff;padding:5px 7px;border-radius:6px;border:1px solid #ddd;">
+        <input type="checkbox" ${u.iaActiva==='SI'?'checked':''}
+          onchange="adminToggleConfig('${u.idUsuario}','iaActiva',this.checked?'SI':'NO')">
+        🤖 IA habilitada
       </label>
       <div style="display:flex;align-items:center;gap:4px;background:#fff;padding:5px 7px;border-radius:6px;border:1px solid #ddd;">
         <span>👑 Nivel:</span>
@@ -5844,7 +5908,7 @@ function irA(id){
   document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('activo'));
   document.getElementById('page-'+id).classList.add('activo');
 
-  const idx={  form:0,  historial:1,  exportar:2,  reportar:3,  admin:4}[id];
+  const idx={  form:0,  historial:1,  exportar:2,  reportar:3,  admin:4,  ia:5}[id];
   document.querySelectorAll('.nav-tab')[idx].classList.add('activo');
   if(id==='historial') renderHistorial();
   if(id==='exportar'){ renderStats(); actualizarPreviewExport(); actualizarContadorBuses(); actualizarContadorPendientes(); }
@@ -6558,6 +6622,74 @@ function togglePanelVoz(){
   contenido.style.display = abierto ? 'none' : 'block';
   btn.textContent = abierto ? '⚙️ Opciones de voz ▼' : '⚙️ Opciones de voz ▲';
 }
+
+/* ══ PÁGINA IA — funciones ══ */
+function actualizarVisibilidadIA(iaActiva){
+  const activo = String(iaActiva||'').toUpperCase() === 'SI';
+  document.querySelectorAll('.solo-ia').forEach(el => {
+    el.style.display = activo ? '' : 'none';
+  });
+}
+
+/* ── Admin: guardar clave de Gemini en el servidor (celda Y1 de Usuarios) ── */
+async function guardarGeminiKeyAdmin(){
+  const inp = document.getElementById('ia-key-input');
+  const key = (inp.value||'').trim();
+  const admin = JSON.parse(localStorage.getItem(STORAGE_USUARIO)||'null');
+  if(!admin){ toast('⚠️ Inicia sesión primero','rojo'); return; }
+
+  try{
+    const cfg = { geminiKey: key };
+    const data = await (await fetch(API_URL+'?action=actualizarConfigUsuario&usuario='+encodeURIComponent(admin.idUsuario)
+      +'&deviceId='+encodeURIComponent(obtenerDeviceId())
+      +'&idObjetivo='+encodeURIComponent(admin.idUsuario)
+      +'&config='+encodeURIComponent(JSON.stringify(cfg)))).json();
+    if(data.ok){
+      localStorage.setItem('minpao_gemini_key', key);
+      toast(key ? '✅ Clave guardada en el servidor' : '🗑️ Clave eliminada', 'verde');
+      actualizarEstadoIA();
+    } else {
+      toast('❌ '+(data.mensaje||'Error'),'rojo');
+    }
+  }catch(e){ toast('❌ Error de conexión','rojo'); }
+}
+
+function actualizarEstadoIA(){
+  const key = localStorage.getItem('minpao_gemini_key')||'';
+  const estadoAdmin = document.getElementById('ia-key-estado-admin');
+  const info = document.getElementById('ia-estado-info');
+  if(estadoAdmin) estadoAdmin.textContent = key ? '🟢 Clave configurada en el servidor' : '🔴 Sin clave';
+  if(info) info.textContent = key
+    ? '🟢 IA activa. En modo voz, pregunta lo que quieras cuando estés en reposo.'
+    : '🔴 Sin clave configurada. Contacta al administrador.';
+}
+
+async function probarConexionGemini(){
+  const key = localStorage.getItem('minpao_gemini_key')||'';
+  if(!key){ toast('⚠️ Primero configura la clave','rojo'); return; }
+  toast('🧪 Probando conexión...');
+  try{
+    const resp = await fetch(
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key='+key,
+      { method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({contents:[{parts:[{text:'Responde solo: Hola, soy Gemini y funciono correctamente.'}]}],generationConfig:{maxOutputTokens:30}})
+      });
+    const data = await resp.json();
+    const txt = data?.candidates?.[0]?.content?.parts?.[0]?.text||'';
+    if(txt){
+      toast('✅ Conexión exitosa: '+txt.substring(0,50),'verde');
+      if(typeof hablar==='function') hablar(txt);
+    } else {
+      const err = data?.error?.message||'Sin respuesta';
+      toast('❌ Error: '+err,'rojo');
+    }
+  }catch(e){
+    toast('❌ Error de conexión: '+e.message,'rojo');
+  }
+}
+
+// Inicializar estado de IA al cargar
+setTimeout(actualizarEstadoIA, 500);
 
 
 /* ══════════════════════════════════════════════════════════════

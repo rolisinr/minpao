@@ -713,13 +713,20 @@ function crearReconocimiento() {
       return;
     }
 
-    // ── En REPOSO: solo reacciona si oye una ruta válida; todo lo demás lo ignora ──
+    // ── En REPOSO: reacciona a rutas válidas. Si no es ruta ni comando,
+    // y tiene clave de Gemini, consulta a la IA como fallback ──
     if (enReposo) {
       const rutaDetectada = extraerRuta(palabrasANumeros(textoNorm));
-      if (!rutaDetectada) return; // conversación/ruido: ni contesta
-      enReposo = false;
-      procesarFrase(texto); // procesa la ruta (y lo demás que venga en la misma frase)
-      programarRecordatorio();
+      if (rutaDetectada) {
+        enReposo = false;
+        procesarFrase(texto);
+        programarRecordatorio();
+        return;
+      }
+      // No es ruta ni comando conocido → consultar Gemini si está configurado
+      if (obtenerGeminiKey() && textoNorm.length > 3) {
+        consultarGemini(texto);
+      }
       return;
     }
 
@@ -993,6 +1000,67 @@ function toggleModoVoz() {
   if (!VOZ_SOPORTADA) { toast('❌ El modo voz no está disponible en este navegador', 'rojo'); return; }
   if (!vozActivaAhora) activarConversacionPorVoz();
   else desactivarModoVoz();
+}
+
+/* ══════════════════════════════════════════════════════════════
+   GEMINI — Asistente inteligente con IA
+   La API key se recibe del servidor al iniciar sesión (si el admin
+   la configuró y el usuario tiene IAActiva=SI). Se guarda en
+   localStorage automáticamente, el usuario nunca la toca.
+   ══════════════════════════════════════════════════════════════ */
+const GEMINI_KEY_STORAGE = 'minpao_gemini_key';
+const GEMINI_MODEL = 'gemini-2.5-flash';
+
+function obtenerGeminiKey() {
+  return localStorage.getItem(GEMINI_KEY_STORAGE) || '';
+}
+
+async function consultarGemini(pregunta) {
+  const key = obtenerGeminiKey();
+  if (!key) { return; } // sin clave, no hace nada (silencioso)
+
+  let contexto = 'Eres el asistente de voz de minpao, una app de registro de buses en Lima, Perú. ';
+  contexto += 'Responde en español peruano, corto y directo (máximo 2 frases). ';
+  try {
+    const regHoy = dbDelUsuario().filter(r => r.fecha === hoy());
+    contexto += 'Hoy el inspector lleva ' + regHoy.length + ' registros. ';
+    const td = cargarDatosTemporizador();
+    if (td && td.estado === 'corriendo') {
+      const rest = Math.max(0, td.segundosRestantes - Math.floor((Date.now() - td.tsUltimoTick) / 1000));
+      contexto += 'Quedan ' + Math.floor(rest / 60) + ' minutos del temporizador. ';
+    }
+    if (regHoy.length > 0) {
+      const rutasCount = {};
+      regHoy.forEach(r => { rutasCount[r.ruta] = (rutasCount[r.ruta] || 0) + 1; });
+      contexto += 'Registros por ruta: ' + Object.entries(rutasCount).map(([r, c]) => r + ':' + c).join(', ') + '. ';
+    }
+  } catch (e) {}
+
+  actualizarIndicadorVoz('🤖 Pensando...');
+
+  try {
+    const resp = await fetch(
+      'https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODEL + ':generateContent?key=' + key,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: contexto + '\n\nEl inspector pregunta: ' + pregunta }] }],
+          generationConfig: { maxOutputTokens: 150 }
+        })
+      }
+    );
+    const data = await resp.json();
+    const respuesta = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    if (respuesta) {
+      hablar(respuesta);
+    } else {
+      hablar('No pude obtener una respuesta.');
+    }
+  } catch (e) {
+    console.error('[gemini]', e);
+    hablar('Error al consultar la IA.');
+  }
 }
 
 /* ══════════════════════════════════════════════════════════════
