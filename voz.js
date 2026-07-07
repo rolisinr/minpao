@@ -162,36 +162,49 @@ function actualizarIndicadorVoz(texto) {
 let minpaoHablando = false;
 let loQueDijoMinpao = '';
 
+let _seguridadHablar = null; // timeout de seguridad si onend no se dispara
+
 function hablar(texto, alTerminar) {
   actualizarIndicadorVoz('🔵 ' + texto);
   loQueDijoMinpao = normalizarVoz(texto);
   // Pausar el micrófono mientras habla para evitar que capte su propia voz (loops)
   try { if (reconocimiento) reconocimiento.stop(); } catch(e) {}
+
+  // Limpiar cualquier seguro anterior
+  if (_seguridadHablar) { clearTimeout(_seguridadHablar); _seguridadHablar = null; }
+
+  function _finHabla() {
+    if (_seguridadHablar) { clearTimeout(_seguridadHablar); _seguridadHablar = null; }
+    minpaoHablando = false;
+    setTimeout(() => { loQueDijoMinpao = ''; }, 400);
+    if (vozActivaAhora) setTimeout(() => reiniciarReconocimiento(0), 300);
+    if (alTerminar) alTerminar();
+  }
+
   try {
     const u = new SpeechSynthesisUtterance(texto);
     u.lang = IDIOMA_VOZ;
     u.rate = Math.min(velocidadVoz * 1.15, 1.6);
     u.volume = 0.85;
     minpaoHablando = true;
-    u.onend = () => {
-      minpaoHablando = false;
-      setTimeout(() => { loQueDijoMinpao = ''; }, 400);
-      // Reactivar el micrófono después de hablar
-      if (vozActivaAhora) setTimeout(() => reiniciarReconocimiento(0), 300);
-      if (alTerminar) alTerminar();
-    };
-    u.onerror = () => {
-      minpaoHablando = false;
-      if (vozActivaAhora) setTimeout(() => reiniciarReconocimiento(0), 300);
-      if (alTerminar) alTerminar();
-    };
+    u.onend = _finHabla;
+    u.onerror = _finHabla;
     speechSynthesis.cancel();
     speechSynthesis.speak(u);
+
+    // Seguro: si onend no se dispara en un tiempo razonable, forzar la reactivación
+    // (algunos navegadores/dispositivos no disparan onend correctamente)
+    const duracionEstimada = Math.max(2000, texto.length * 80); // ~80ms por caracter
+    _seguridadHablar = setTimeout(() => {
+      if (minpaoHablando) {
+        console.warn('[voz] onend no se disparó, forzando reactivación del mic');
+        _finHabla();
+      }
+    }, duracionEstimada);
+
   } catch (e) {
     console.error('Error de síntesis de voz:', e);
-    minpaoHablando = false;
-    if (vozActivaAhora) reiniciarReconocimiento(0);
-    if (alTerminar) alTerminar();
+    _finHabla();
   }
 }
 
