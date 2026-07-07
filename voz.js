@@ -655,8 +655,9 @@ function crearReconocimiento() {
     const pa = normalizarVoz(palabraActivacion);
     const reFinaliza = new RegExp(pa + '\\s+(finaliza|termina|para|apaga|detente|chau)');
     if (reFinaliza.test(textoNorm) || /\bfinalizar voz|terminar voz|apagar voz\b/.test(textoNorm)) {
-      hablar('Modo voz apagado.');
-      setTimeout(() => desactivarModoVoz(), 900);
+      hablar('Modo voz apagado.', () => {
+        desactivarModoVoz(); // se desactiva DESPUÉS de que termina de hablar
+      });
       return;
     }
 
@@ -757,10 +758,9 @@ function crearReconocimiento() {
   };
 
   r.onend = () => {
-    // Reinicio para mantener la escucha viva todo el turno.
-    // Se reintenta con varios intentos por si el primer start() falla
-    // (pasa cuando el motor todavía no terminó de liberarse).
     if (!vozActivaAhora) return;
+    // NO reiniciar si minpao está hablando — hablar() se encarga de reactivar al terminar
+    if (minpaoHablando) return;
     reiniciarReconocimiento(0);
   };
 
@@ -771,7 +771,7 @@ function crearReconocimiento() {
    motor aún no se liberó, reintenta unas cuantas veces con más espera.
    Esto evita que el micrófono se quede apagado a mitad del turno. ── */
 function reiniciarReconocimiento(intento) {
-  if (!vozActivaAhora) return;
+  if (!vozActivaAhora || minpaoHablando) return; // no reiniciar mientras habla
   try {
     reconocimiento.start();
   } catch (e) {
@@ -964,8 +964,8 @@ function iniciarLatidoMicrofono() {
   marcaReconocimientoVivo = Date.now();
   latidoMic = setInterval(() => {
     if (!vozActivaAhora) { detenerLatidoMicrofono(); return; }
+    if (minpaoHablando) { marcaReconocimientoVivo = Date.now(); return; } // no molestar mientras habla
     const inactivo = Date.now() - marcaReconocimientoVivo;
-    // Si lleva más de 6s sin ninguna señal de vida del motor, reiniciar
     if (inactivo > 6000) {
       marcaReconocimientoVivo = Date.now();
       reiniciarReconocimiento(0);
