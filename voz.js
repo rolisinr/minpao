@@ -1047,20 +1047,61 @@ async function consultarGemini(pregunta) {
   contexto += 'Si el usuario agradece, respondes con una frase breve como "Con gusto" o "Para eso estoy". ';
   contexto += 'Cuando existan varias opciones, presentas primero la más recomendable y luego mencionas las demás. ';
   contexto += 'Si una respuesta implica un riesgo o puede generar problemas, primero adviertes el riesgo y luego propones la solución. ';
+// ── Conocimiento de la app (fijo) ──
+  contexto += 'SOBRE LA APP: Minpao es una PWA para registrar buses en paraderos y tranqueras del corredor vial en Lima. ';
+  contexto += 'Tiene estas secciones: Registro (formulario principal), Historial (ver registros pasados), Exportar (generar Excel/PDF oficial), Reportar (enviar reportes), Admin (gestión de usuarios, solo admins), IA (tú), Mi perfil. ';
+  contexto += 'MODO VOZ: se activa con el botón "Modo voz" o diciendo la palabra clave "azul". Comandos: decir una ruta inicia un registro, "código 1 al 6" para la ocupación, número suelto para el padrón, "cancelar" borra el registro en curso, "nuevo registro" limpia y espera nueva ruta, "editar último registro" permite corregir el último guardado, "pausar" pausa el temporizador, "reanudar" lo reanuda. ';
+  contexto += 'MODOS: Tranquera (solo pide ruta, ocupación y padrón) y Paradero (suma bajan, suben, tiempo espera y pax espera). Por defecto está en Tranquera. ';
+  contexto += 'TEMPORIZADOR: cuenta regresiva de 1 hora para el periodo de registro. Se inicia manual o al guardar el primer registro del día. Puede pausarse (QAP, incidente, otro motivo) y reanudarse. Al terminar ofrece generar el documento oficial. ';
+  contexto += 'EXPORTAR: "Excel rápido" descarga inmediato en formato básico. "Generar oficial" crea el documento con la plantilla oficial en la nube (Google Drive). "Descargar documento oficial" baja el PDF generado. ';
+  contexto += 'COV (datos del turno): turno (auto: mañana/tarde), zona, ubicación/paradero, sentido. Se llena una vez al día. ';
+  contexto += 'OCUPACIÓN VISUAL: Código 1=Vacío(0%), Código 2=Casi vacío(50%), Código 3=Sentados(75%), Código 4=Sentados(100%), Código 5=Sentados+De pie(50%), Código 6=Lleno full(100%). ';
+  contexto += 'PLACA: si el padrón es nuevo (no está en la biblioteca), se debe escribir la placa a mano en la pantalla. ';
+  contexto += 'BACKUP: se puede importar registros desde archivos .txt o .xlsx en la sección Exportar. ';
+
+  // ── Datos en vivo del inspector (dinámico) ──
   try {
     const regHoy = dbDelUsuario().filter(r => r.fecha === hoy());
-    contexto += 'Hoy el inspector lleva ' + regHoy.length + ' registros. ';
-    const td = cargarDatosTemporizador();
-    if (td && td.estado === 'corriendo') {
-      const rest = Math.max(0, td.segundosRestantes - Math.floor((Date.now() - td.tsUltimoTick) / 1000));
-      contexto += 'Quedan ' + Math.floor(rest / 60) + ' minutos del temporizador. ';
-    }
+    contexto += 'DATOS DE HOY: ' + regHoy.length + ' registros. ';
     if (regHoy.length > 0) {
       const rutasCount = {};
       regHoy.forEach(r => { rutasCount[r.ruta] = (rutasCount[r.ruta] || 0) + 1; });
-      contexto += 'Registros por ruta: ' + Object.entries(rutasCount).map(([r, c]) => r + ':' + c).join(', ') + '. ';
+      contexto += 'Por ruta: ' + Object.entries(rutasCount).map(([r, c]) => r + '=' + c).join(', ') + '. ';
+      const ultimo = regHoy[regHoy.length - 1];
+      contexto += 'Último registro: ruta ' + (ultimo.ruta||'') + ', ' + (ultimo.ocupacion||'') + ', padrón ' + (ultimo.padron||'') + ' a las ' + (ultimo.hora||'') + '. ';
+      const primero = regHoy[0];
+      contexto += 'Primer registro hoy a las ' + (primero.hora||'') + '. ';
     }
-  } catch (e) {}
+    // Registros de ayer
+    const ayer = new Date(); ayer.setDate(ayer.getDate()-1);
+    const ayerStr = ayer.toISOString().split('T')[0];
+    const regAyer = dbDelUsuario().filter(r => r.fecha === ayerStr);
+    if (regAyer.length > 0) contexto += 'AYER: ' + regAyer.length + ' registros. ';
+
+    // Temporizador
+    const td = cargarDatosTemporizador();
+    if (td && td.estado === 'corriendo') {
+      const rest = Math.max(0, td.segundosRestantes - Math.floor((Date.now() - td.tsUltimoTick) / 1000));
+      contexto += 'TEMPORIZADOR: en curso, quedan ' + Math.floor(rest / 60) + ' minutos. Inició a las ' + (td.horaInicio||'') + '. ';
+    } else if (td && td.estado === 'pausado') {
+      contexto += 'TEMPORIZADOR: pausado, quedan ' + Math.floor(td.segundosRestantes / 60) + ' minutos. ';
+    } else if (td && td.estado === 'finalizado') {
+      contexto += 'TEMPORIZADOR: finalizado. Fue de ' + (td.horaInicio||'') + ' a ' + (td.horaFin||'') + '. ';
+    } else {
+      contexto += 'TEMPORIZADOR: sin iniciar. ';
+    }
+
+    // COV
+    const cov = JSON.parse(localStorage.getItem('atu_cov')||'null');
+    if (cov) contexto += 'TURNO: ' + (cov.turno||'') + ', zona ' + (cov.zona||'') + ', paradero ' + (cov.paradero||'') + ', sentido ' + (cov.sentido||'') + '. ';
+
+    // Pendientes
+    const pendiente = localStorage.getItem('minpao_pendiente_exportar');
+    if (pendiente && pendiente !== hoy()) contexto += 'ALERTA: tiene exportación pendiente de ' + pendiente + '. ';
+
+    // Hora actual
+    contexto += 'HORA ACTUAL: ' + new Date().toLocaleTimeString('es-PE', {hour:'2-digit',minute:'2-digit'}) + '. ';
+  } catch(e) {}
 
   actualizarIndicadorVoz('🤖 Pensando...');
   const body = JSON.stringify({
