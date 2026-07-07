@@ -1009,7 +1009,7 @@ function toggleModoVoz() {
    localStorage automáticamente, el usuario nunca la toca.
    ══════════════════════════════════════════════════════════════ */
 const GEMINI_KEY_STORAGE = 'minpao_gemini_key';
-const GEMINI_MODEL = 'gemini-2.5-flash';
+const GEMINI_MODELOS = ['gemini-3-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash-lite', 'gemini-2.5-flash']; // orden de prioridad: más cuota primero
 
 function obtenerGeminiKey() {
   return localStorage.getItem(GEMINI_KEY_STORAGE) || '';
@@ -1017,7 +1017,7 @@ function obtenerGeminiKey() {
 
 async function consultarGemini(pregunta) {
   const key = obtenerGeminiKey();
-  if (!key) { return; } // sin clave, no hace nada (silencioso)
+  if (!key) { return; }
 
   let contexto = 'Eres el asistente de voz de minpao, una app de registro de buses en Lima, Perú. ';
   contexto += 'Responde en español peruano, corto y directo (máximo 2 frases). ';
@@ -1037,30 +1037,38 @@ async function consultarGemini(pregunta) {
   } catch (e) {}
 
   actualizarIndicadorVoz('🤖 Pensando...');
+  const body = JSON.stringify({
+    contents: [{ parts: [{ text: contexto + '\n\nEl inspector pregunta: ' + pregunta }] }],
+    generationConfig: { maxOutputTokens: 150 }
+  });
 
-  try {
-    const resp = await fetch(
-      'https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODEL + ':generateContent?key=' + key,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: contexto + '\n\nEl inspector pregunta: ' + pregunta }] }],
-          generationConfig: { maxOutputTokens: 150 }
-        })
+  // Intentar con cada modelo en orden hasta que uno responda
+  for (const modelo of GEMINI_MODELOS) {
+    try {
+      const resp = await fetch(
+        'https://generativelanguage.googleapis.com/v1beta/models/' + modelo + ':generateContent?key=' + key,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body }
+      );
+      const data = await resp.json();
+
+      // Si el modelo está agotado (429 o error de cuota), probar el siguiente
+      if (data?.error?.code === 429 || data?.error?.status === 'RESOURCE_EXHAUSTED') {
+        console.warn('[gemini] ' + modelo + ' agotado, probando siguiente...');
+        continue;
       }
-    );
-    const data = await resp.json();
-    const respuesta = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    if (respuesta) {
-      hablar(respuesta);
-    } else {
-      hablar('No pude obtener una respuesta.');
+
+      const respuesta = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      if (respuesta) {
+        hablar(respuesta);
+        return;
+      }
+    } catch (e) {
+      console.error('[gemini] error con ' + modelo + ':', e);
+      continue;
     }
-  } catch (e) {
-    console.error('[gemini]', e);
-    hablar('Error al consultar la IA.');
   }
+
+  hablar('No pude obtener una respuesta. Los modelos están agotados por hoy.');
 }
 
 /* ══════════════════════════════════════════════════════════════

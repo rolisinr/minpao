@@ -6668,24 +6668,28 @@ async function probarConexionGemini(){
   const key = localStorage.getItem('minpao_gemini_key')||'';
   if(!key){ toast('⚠️ Primero configura la clave','rojo'); return; }
   toast('🧪 Probando conexión...');
-  try{
-    const resp = await fetch(
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key='+key,
-      { method:'POST', headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({contents:[{parts:[{text:'Responde solo: Hola, soy Gemini y funciono correctamente.'}]}],generationConfig:{maxOutputTokens:30}})
-      });
-    const data = await resp.json();
-    const txt = data?.candidates?.[0]?.content?.parts?.[0]?.text||'';
-    if(txt){
-      toast('✅ Conexión exitosa: '+txt.substring(0,50),'verde');
-      if(typeof hablar==='function') hablar(txt);
-    } else {
-      const err = data?.error?.message||'Sin respuesta';
-      toast('❌ Error: '+err,'rojo');
-    }
-  }catch(e){
-    toast('❌ Error de conexión: '+e.message,'rojo');
+
+  const modelos = ['gemini-2.5-flash-lite','gemini-2.0-flash','gemini-2.5-flash'];
+  for(const modelo of modelos){
+    try{
+      const resp = await fetch(
+        'https://generativelanguage.googleapis.com/v1beta/models/'+modelo+':generateContent?key='+key,
+        { method:'POST', headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({contents:[{parts:[{text:'Responde solo: Hola, funciono correctamente.'}]}],generationConfig:{maxOutputTokens:30}})
+        });
+      const data = await resp.json();
+      if(data?.error?.code === 429 || data?.error?.status === 'RESOURCE_EXHAUSTED'){
+        continue; // modelo agotado, probar siguiente
+      }
+      const txt = data?.candidates?.[0]?.content?.parts?.[0]?.text||'';
+      if(txt){
+        toast('✅ '+modelo+': '+txt.substring(0,50),'verde');
+        if(typeof hablar==='function') hablar(txt);
+        return;
+      }
+    }catch(e){ continue; }
   }
+  toast('❌ Todos los modelos están agotados por hoy','rojo');
 }
 
 // Inicializar estado de IA al cargar
