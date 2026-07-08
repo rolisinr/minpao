@@ -694,7 +694,12 @@ function crearReconocimiento() {
     if (/bateria|pila|carga/.test(textoNorm)) { responderBateria(); return; }
     if (/cuanto (tiempo|falta)|tiempo restante|cuanto queda/.test(textoNorm)) { responderTiempoRestante(); return; }
     if (/ultimo (padron|registro|bus)|cual fue el ultimo/.test(textoNorm)) { responderUltimoPadron(); return; }
-    if (/editar (ultimo|el ultimo|anterior)|ultimo registro|editar registro/.test(textoNorm)) { corregirUltimoRegistro(); return; }
+    if (/editar (ultimo|el ultimo|anterior)|ultimo registro|editar registro/.test(textoNorm)) {
+      // Si dice "editar último registro ruta 336" o "editar último código 3", pasar el resto
+      const restoFrase = textoNorm.replace(/editar (ultimo|el ultimo|anterior)|ultimo registro|editar registro/,'').trim();
+      corregirUltimoRegistro(restoFrase || null);
+      return;
+    }
     if (/iniciar temporizador|iniciar timer|iniciar reloj|iniciar hora/.test(textoNorm)) { iniciarTemporizador(); hablar('Temporizador iniciado.'); return; }
     if (esperando !== 'reanudar' && /\bpausar\b|pausa registro|pausa temporizador/.test(textoNorm)) { pausarConMotivo('Pausa por voz'); hablar('Pausado.'); return; }
     if (esperando !== 'reanudar' && /\breanudar\b|reanudar registro|reanudar temporizador|continuar registro/.test(textoNorm)) { reanudarTemporizador(); hablar('Reanudado.'); return; }
@@ -886,7 +891,7 @@ function responderUltimoPadron() {
     const regHoy = dbDelUsuario().filter(r => r.fecha === hoy());
     if (!regHoy.length) { hablar('No hay registros hoy.'); return; }
     const ult = regHoy[regHoy.length - 1];
-    hablar('Último: ruta ' + (ult.ruta||'') + ', padrón ' + (ult.padron||'') + '.');
+    hablar('Último: ' + (ult.ruta||'') + ', ' + (ult.ocupacion||'sin ocupación') + ', padrón ' + (ult.padron||'') + '.');
   } catch(e) { hablar('No pude consultar.'); }
 }
 
@@ -1143,52 +1148,83 @@ async function consultarGemini(pregunta) {
    ══════════════════════════════════════════════════════════════ */
 let ultimoRegistroEditando = null;
 
-function corregirUltimoRegistro() {
+function corregirUltimoRegistro(campoDirecto) {
   const regHoy = dbDelUsuario().filter(r => r.fecha === hoy());
   if (!regHoy.length) { hablar('No hay registros hoy.'); return; }
   ultimoRegistroEditando = regHoy[regHoy.length - 1];
-  const resumen = [
-    ultimoRegistroEditando.ruta || '',
-    ultimoRegistroEditando.ocupacion || '',
-    'padrón ' + (ultimoRegistroEditando.padron || ''),
-  ].join(', ');
+
+  // Si viene con campo directo ("editar último registro ruta"), procesarlo de una
+  if (campoDirecto) {
+    procesarCorreccionUltimo(campoDirecto);
+    return;
+  }
+
+  const resumen = (ultimoRegistroEditando.ruta||'') + ', ' +
+    (ultimoRegistroEditando.ocupacion||'') + ', padrón ' +
+    (ultimoRegistroEditando.padron||'');
   esperando = 'corregir_ultimo';
-  hablar('Último: ' + resumen + '. ¿Qué corrijo?');
+  hablar('Último: ' + resumen + '. Dime qué campo cambiar: ruta, capacidad o padrón.');
 }
 
 function procesarCorreccionUltimo(textoOriginal) {
   const texto = palabrasANumeros(normalizarVoz(textoOriginal));
   if (/\b(cancelar|nada|dejalo|dejar)\b/.test(texto)) {
     esperando = null; ultimoRegistroEditando = null;
-    hablar('Corrección cancelada.'); return;
+    hablar('Edición cancelada.'); return;
   }
-  const campoMap = {
-    ruta:'ruta', ocupacion:'ocupacion', capacidad:'ocupacion',
-    padron:'padron', bajan:'bajan', suben:'suben', espera:'tespera', pax:'paxespera',
-  };
+
   let campo = null, valor = null;
+
+  // "código 3" → ocupación
   const codM = texto.match(/codigo\s+(\d)/);
   if (codM) {
     const codMap = {'1':'Vacío (0%)','2':'Casi vacío (50%)','3':'Sentados (75%)',
       '4':'Sentados (100%)','5':'Sentados 100% + De pie 50%','6':'Lleno full (100%)'};
     campo = 'ocupacion'; valor = codMap[codM[1]] || null;
   }
+
+  // "ruta 336" o "capacidad código 3" o "padrón 55"
   if (!campo) {
+    const campoMap = {
+      ruta:'ruta', ocupacion:'ocupacion', capacidad:'ocupacion',
+      padron:'padron', bajan:'bajan', suben:'suben', espera:'tespera', pax:'paxespera',
+    };
     for (const [pal, c] of Object.entries(campoMap)) {
       const m = texto.match(new RegExp(pal + '\\s+(\\S+)'));
       if (m) { campo = c; valor = m[1]; break; }
     }
   }
-  if (!campo) { const n = texto.match(/\b(\d{1,4})\b/); if (n) { campo='padron'; valor=n[1]; } }
-  if (!campo || !valor) { hablar('No entendí. Di el campo y el valor.'); return; }
 
+  // Número suelto → padrón (lo más común de corregir)
+  if (!campo) {
+    const n = texto.match(/\b(\d{1,4})\b/);
+    if (n) {
+      // Verificar si es una ruta conocida
+      const esRuta = rutas.some(r => normalizarVoz(r) === n[1]);
+      if (esRuta) { campo = 'ruta'; valor = n[1]; }
+      else { campo = 'padron'; valor = n[1]; }
+    }
+  }
+
+  if (!campo || !valor) {
+    hablar('Dime el campo y el valor. Por ejemplo: ruta 336, código 3, o padrón 55.');
+    return;
+  }
+
+  // Aplicar
   if (campo === 'ruta') ultimoRegistroEditando.ruta = valor;
   else if (campo === 'ocupacion') ultimoRegistroEditando.ocupacion = valor;
   else if (campo === 'padron') ultimoRegistroEditando.padron = valor;
   else ultimoRegistroEditando[campo] = valor;
+
   try { localStorage.setItem('atu_db', JSON.stringify(db)); } catch (e) {}
   bipGuardado();
-  hablar('Corregido.');
+
+  // Resumen de los 3 datos después de guardar
+  const resumen = (ultimoRegistroEditando.ruta||'') + ', ' +
+    (ultimoRegistroEditando.ocupacion||'') + ', padrón ' +
+    (ultimoRegistroEditando.padron||'');
+  hablar('Editado: ' + resumen + '.');
   ultimoRegistroEditando = null; esperando = null;
 }
 
