@@ -455,9 +455,10 @@ cursor:pointer;
 .btn-panel-voz-toggle:active{background:#cfd8dc;}
 
 /* ── BOTONES MINI DEL TEMPORIZADOR (en el banner) ── */
-.btn-temp-mini{border:none;border-radius:6px;padding:4px 8px;font-size:14px;
-  background:#e3f2fd;cursor:pointer;transition:.15s;}
-.btn-temp-mini:active{background:#bbdefb;transform:scale(.95);}
+.btn-temp-mini{border:none;border-radius:8px;width:40px;height:40px;font-size:16px;
+  background:#f0f4ff;color:var(--azul);cursor:pointer;transition:.15s;display:flex;align-items:center;justify-content:center;}
+.btn-temp-mini:active{background:#dce6ff;transform:scale(.93);}
+.btn-temp-mini.peligro{background:#fff0f0;color:#c62828;}
 
 /* ── OCUPACIÓN ── */
 .occ-list{display:flex;flex-direction:column;gap:4px;}
@@ -1023,26 +1024,25 @@ body.es-admin .solo-admin.flex{display:flex !important;}
     <div class="cov-mini">
       <strong>—</strong>
       <span>Datos del turno</span>
-      <div class="f" id="horaFecha" style="margin-top:2px;">--</div>
-      <div class="acciones-cov" style="margin-top:4px;">
-        <button onclick="abrirModalCOV(true)">✏️ COV</button>
-      </div>
+      <div id="horaFecha" style="font-size:10px;color:#999;margin-top:3px;letter-spacing:.2px;">--</div>
+      <button onclick="abrirModalCOV(true)" style="margin-top:5px;border:none;background:#e8f0fe;
+        color:var(--azul);border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;">
+        ✏️ COV
+      </button>
     </div>
-    <div class="hora-mini" style="text-align:center;">
-      <div id="temp-banner" style="display:none;">
-        <div id="temp-banner-estado" style="font-size:11px;color:#999;margin-bottom:2px;"></div>
-        <div id="temp-banner-cuenta" style="font-size:36px;font-weight:900;color:var(--azul);font-family:monospace;line-height:1;">60:00</div>
-        <div id="temp-banner-btns" style="display:flex;gap:6px;margin-top:6px;justify-content:center;">
-          <button class="btn-temp-mini" id="tbtn-iniciar" onclick="iniciarTemporizador()" style="padding:6px 14px;font-size:18px;">▶️</button>
-          <button class="btn-temp-mini" id="tbtn-pausar" onclick="abrirPausaTemporizador()" style="display:none;padding:6px 14px;font-size:18px;">⏸️</button>
-          <button class="btn-temp-mini" id="tbtn-reanudar" onclick="reanudarTemporizador()" style="display:none;padding:6px 14px;font-size:18px;">▶️</button>
-          <button class="btn-temp-mini" id="tbtn-reiniciar" onclick="reiniciarTemporizador()" style="display:none;padding:6px 14px;font-size:18px;">🔄</button>
-          <button class="btn-temp-mini" id="tbtn-finalizar" onclick="finalizarTemporizador()" style="display:none;padding:6px 14px;font-size:18px;">⏹️</button>
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;">
+      <div id="temp-banner" style="display:none;text-align:center;">
+        <div id="temp-banner-estado" style="font-size:10px;color:#999;margin-bottom:1px;"></div>
+        <div id="temp-banner-cuenta" style="font-size:34px;font-weight:900;color:var(--azul);font-family:monospace;line-height:1.1;">60:00</div>
+        <div id="temp-banner-btns" style="display:flex;gap:5px;margin-top:5px;justify-content:center;">
+          <button class="btn-temp-mini" id="tbtn-iniciar" onclick="iniciarTemporizador()" title="Iniciar">▶</button>
+          <button class="btn-temp-mini" id="tbtn-pausar" onclick="abrirPausaTemporizador()" style="display:none;" title="Pausar">⏸</button>
+          <button class="btn-temp-mini" id="tbtn-reanudar" onclick="reanudarTemporizador()" style="display:none;" title="Reanudar">▶</button>
+          <button class="btn-temp-mini" id="tbtn-reiniciar" onclick="reiniciarTemporizador()" style="display:none;" title="Reiniciar">↺</button>
+          <button class="btn-temp-mini peligro" id="tbtn-finalizar" onclick="finalizarTemporizador()" style="display:none;" title="Finalizar">■</button>
         </div>
       </div>
-      <div id="hora-fecha-wrap">
-        <span id="horaDisplay" style="display:none;">--:--</span>
-      </div>
+      <span id="horaDisplay" style="display:none;">--:--</span>
     </div>
   </div>
 
@@ -5487,26 +5487,25 @@ function renderBannerCOV(d){
       <strong>${nombreUsuario}</strong>
       <span>📍 ${paradero}</span>
       <span>↔️ ${sentido}</span>
-      <div class="f" id="horaFecha" style="margin-top:2px;">--</div>
-      <div class="acciones-cov" style="margin-top:4px;">
-        <button onclick="abrirModalCOV(true)">✏️ COV</button>
-      </div>
+      <div id="horaFecha" style="font-size:10px;color:#999;margin-top:3px;letter-spacing:.2px;">--</div>
+      <button onclick="abrirModalCOV(true)" style="margin-top:5px;border:none;background:#e8f0fe;
+        color:var(--azul);border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;">
+        ✏️ COV
+      </button>
     </div>
-    <div class="hora-mini" style="text-align:center;">
-      <div id="temp-banner" style="display:none;">
-        <div id="temp-banner-estado" style="font-size:11px;color:#999;margin-bottom:2px;"></div>
-        <div id="temp-banner-cuenta" style="font-size:36px;font-weight:900;color:var(--azul);font-family:monospace;line-height:1;">60:00</div>
-        <div id="temp-banner-btns" style="display:flex;gap:6px;margin-top:6px;justify-content:center;">
-          <button class="btn-temp-mini" id="tbtn-iniciar" onclick="iniciarTemporizador()" style="padding:6px 14px;font-size:18px;">▶️</button>
-          <button class="btn-temp-mini" id="tbtn-pausar" onclick="abrirPausaTemporizador()" style="display:none;padding:6px 14px;font-size:18px;">⏸️</button>
-          <button class="btn-temp-mini" id="tbtn-reanudar" onclick="reanudarTemporizador()" style="display:none;padding:6px 14px;font-size:18px;">▶️</button>
-          <button class="btn-temp-mini" id="tbtn-reiniciar" onclick="reiniciarTemporizador()" style="display:none;padding:6px 14px;font-size:18px;">🔄</button>
-          <button class="btn-temp-mini" id="tbtn-finalizar" onclick="finalizarTemporizador()" style="display:none;padding:6px 14px;font-size:18px;">⏹️</button>
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;">
+      <div id="temp-banner" style="display:none;text-align:center;">
+        <div id="temp-banner-estado" style="font-size:10px;color:#999;margin-bottom:1px;"></div>
+        <div id="temp-banner-cuenta" style="font-size:34px;font-weight:900;color:var(--azul);font-family:monospace;line-height:1.1;">60:00</div>
+        <div id="temp-banner-btns" style="display:flex;gap:5px;margin-top:5px;justify-content:center;">
+          <button class="btn-temp-mini" id="tbtn-iniciar" onclick="iniciarTemporizador()" title="Iniciar">▶</button>
+          <button class="btn-temp-mini" id="tbtn-pausar" onclick="abrirPausaTemporizador()" style="display:none;" title="Pausar">⏸</button>
+          <button class="btn-temp-mini" id="tbtn-reanudar" onclick="reanudarTemporizador()" style="display:none;" title="Reanudar">▶</button>
+          <button class="btn-temp-mini" id="tbtn-reiniciar" onclick="reiniciarTemporizador()" style="display:none;" title="Reiniciar">↺</button>
+          <button class="btn-temp-mini peligro" id="tbtn-finalizar" onclick="finalizarTemporizador()" style="display:none;" title="Finalizar">■</button>
         </div>
       </div>
-      <div id="hora-fecha-wrap">
-        <span id="horaDisplay" style="display:none;">--:--</span>
-      </div>
+      <span id="horaDisplay" style="display:none;">--:--</span>
     </div>`;
   tickHora();
   renderEstadoTemporizador(); // restaurar el temporizador después del re-render

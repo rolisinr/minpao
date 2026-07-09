@@ -1,4 +1,4 @@
-const CACHE_NAME = 'minpao-v39'; // subir SIEMPRE que cambie voz.js u otro asset
+const CACHE_NAME = 'minpao-v40'; // subir SIEMPRE que cambie voz.js u otro asset
 const ASSETS = [
   './',
   './index.html',
