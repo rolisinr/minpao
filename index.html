@@ -1041,7 +1041,7 @@ body.es-admin .solo-admin.flex{display:flex !important;}
         </div>
       </div>
       <div id="hora-fecha-wrap">
-        <div class="h" id="horaDisplay">--:--</div>
+        <span id="horaDisplay" style="display:none;">--:--</span>
       </div>
     </div>
   </div>
@@ -1085,7 +1085,7 @@ body.es-admin .solo-admin.flex{display:flex !important;}
     <div class="cols2">
       <div class="field">
         <label>Padrón</label>
-        <input type="text" id="f-padron" inputmode="numeric" pattern="[0-9]*" placeholder="Ej: 12345" autocomplete="off" oninput="onPadronInput(this)" onfocus="setTimeout(()=>{const el=document.getElementById('f-padron');if(el)el.scrollIntoView({behavior:'smooth',block:'center'});},350)"/>
+        <input type="text" id="f-padron" inputmode="numeric" pattern="[0-9]*" placeholder="Ej: 12345" autocomplete="off" oninput="onPadronInput(this)" onfocus="setTimeout(()=>{const el=document.querySelector('.fila-ruta-occ');if(el)el.scrollIntoView({behavior:'smooth',block:'start'});},300)"/>
         <div class="padron-hint" id="padron-hint"></div>
       </div>
       <div class="field">
@@ -1440,14 +1440,45 @@ body.es-admin .solo-admin.flex{display:flex !important;}
     </button>
   </div>
 
-  <!-- Próximamente -->
-  <div class="card" style="opacity:.6;">
-    <h3>🚀 Próximamente</h3>
-    <p style="font-size:12px;color:#999;">
-      Análisis inteligente de registros · Resúmenes automáticos del día ·
-      Detección de patrones · Consultas avanzadas por voz ·
-      Modo conversacional
-    </p>
+  <!-- Resumen del día -->
+  <div class="card">
+    <h3>📊 Resumen del día</h3>
+    <div id="ia-resumen-dia" style="font-size:13px;color:#666;min-height:40px;">
+      <em style="color:#bbb;">Toca "Generar resumen" para analizar tus registros de hoy.</em>
+    </div>
+    <div style="display:flex;gap:6px;margin-top:10px;">
+      <button class="btn-admin-tab activo" onclick="iaGenerarResumen()" style="flex:1;padding:10px;">✨ Generar resumen</button>
+      <button class="btn-admin-tab" onclick="iaResumenAyer()" style="flex:1;padding:10px;">📅 Ver ayer</button>
+    </div>
+  </div>
+
+  <!-- Estadísticas -->
+  <div class="card">
+    <h3>📈 Estadísticas de hoy</h3>
+    <div id="ia-stats-hoy" style="font-size:13px;"><em style="color:#bbb;">Sin registros aún.</em></div>
+    <button class="btn-admin-tab" onclick="iaActualizarStats()" style="width:100%;padding:10px;margin-top:10px;">🔄 Actualizar</button>
+  </div>
+
+  <!-- Consulta libre -->
+  <div class="card">
+    <h3>💬 Consultar a Minpao IA</h3>
+    <p style="font-size:12px;color:#666;margin-bottom:8px;">Haz cualquier pregunta sobre tus registros, la app o tu turno.</p>
+    <div style="display:flex;gap:6px;">
+      <input type="text" id="ia-consulta-input" placeholder="Ej: ¿Cuántos buses de la 301 registré?"
+        style="flex:1;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px;"
+        onkeydown="if(event.key==='Enter')iaEnviarConsulta()"/>
+      <button class="btn-admin-tab activo" onclick="iaEnviarConsulta()" style="padding:8px 14px;">➤</button>
+    </div>
+    <div id="ia-respuesta" style="margin-top:10px;font-size:13px;color:#333;min-height:30px;
+      background:#f8f9ff;border-radius:8px;padding:8px;display:none;"></div>
+  </div>
+
+  <!-- Recomendaciones -->
+  <div class="card">
+    <h3>💡 Recomendaciones</h3>
+    <div id="ia-recomendaciones" style="font-size:13px;color:#666;min-height:40px;">
+      <em style="color:#bbb;">Genera un resumen para ver recomendaciones personalizadas.</em>
+    </div>
   </div>
 
 </div>
@@ -5474,7 +5505,7 @@ function renderBannerCOV(d){
         </div>
       </div>
       <div id="hora-fecha-wrap">
-        <div class="h" id="horaDisplay">--:--</div>
+        <span id="horaDisplay" style="display:none;">--:--</span>
       </div>
     </div>`;
   tickHora();
@@ -6700,6 +6731,93 @@ async function probarConexionGemini(){
 
 // Inicializar estado de IA al cargar
 setTimeout(actualizarEstadoIA, 500);
+
+/* ══ PÁGINA IA — Análisis, estadísticas y consulta libre ══ */
+function iaObtenerContexto(fechaStr) {
+  fechaStr = fechaStr || hoy();
+  const regs = dbDelUsuario().filter(r => r.fecha === fechaStr);
+  if (!regs.length) return null;
+  const porRuta = {}, porOcup = {};
+  regs.forEach(r => {
+    porRuta[r.ruta] = (porRuta[r.ruta]||0) + 1;
+    porOcup[r.ocupacion] = (porOcup[r.ocupacion]||0) + 1;
+  });
+  return { fecha:fechaStr, total:regs.length, porRuta, porOcup,
+    primero:regs[0], ultimo:regs[regs.length-1] };
+}
+
+function iaActualizarStats() {
+  const el = document.getElementById('ia-stats-hoy');
+  const ctx = iaObtenerContexto(hoy());
+  if (!ctx) { el.innerHTML='<em style="color:#bbb;">Sin registros hoy.</em>'; return; }
+  const rutasHtml = Object.entries(ctx.porRuta).sort((a,b)=>b[1]-a[1])
+    .map(([r,c])=>`<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f0f0f0;">
+      <span style="font-weight:600;color:var(--azul);">${r}</span><span>${c} bus${c>1?'es':''}</span></div>`).join('');
+  const ocpHtml = Object.entries(ctx.porOcup).sort((a,b)=>b[1]-a[1])
+    .map(([o,c])=>`<span style="background:#e3f2fd;border-radius:10px;padding:2px 8px;font-size:11px;">${o.split('(')[0].trim()}: ${c}</span>`).join(' ');
+  el.innerHTML=`<div style="margin-bottom:6px;"><strong>${ctx.total}</strong> registros · <span style="color:#999;font-size:11px;">${ctx.primero?.hora||''} – ${ctx.ultimo?.hora||''}</span></div>
+    <div style="margin-bottom:8px;">${rutasHtml}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:4px;">${ocpHtml}</div>`;
+}
+
+async function _iaConsultar(prompt, elId) {
+  const key = localStorage.getItem('minpao_gemini_key')||'';
+  if (!key) { toast('⚠️ Configura la clave de IA primero','rojo'); return; }
+  const el = document.getElementById(elId);
+  el.innerHTML='<em style="color:#999;">🤖 Analizando...</em>';
+  const modelos=['gemini-3-flash','gemini-3.1-flash-lite','gemini-2.5-flash-lite','gemini-2.5-flash'];
+  for (const modelo of modelos) {
+    try {
+      const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${key}`,
+        {method:'POST',headers:{'Content-Type':'application/json'},
+         body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{maxOutputTokens:350}})});
+      const data = await resp.json();
+      if (data?.error?.code===429) continue;
+      const txt = data?.candidates?.[0]?.content?.parts?.[0]?.text||'';
+      if (!txt) continue;
+      return txt;
+    } catch(e) { continue; }
+  }
+  return null;
+}
+
+async function iaGenerarResumen(fechaStr) {
+  fechaStr = fechaStr || hoy();
+  const ctx = iaObtenerContexto(fechaStr);
+  const elRes = document.getElementById('ia-resumen-dia');
+  const elRec = document.getElementById('ia-recomendaciones');
+  if (!ctx) { elRes.innerHTML='<em style="color:#bbb;">Sin registros para analizar.</em>'; return; }
+  iaActualizarStats();
+  const prompt=`Eres Minpao, asistente para inspectores de buses en Lima. Analiza el turno del ${fechaStr===hoy()?'día de hoy':fechaStr}:
+Total: ${ctx.total} registros. Por ruta: ${JSON.stringify(ctx.porRuta)}. Por ocupación: ${JSON.stringify(ctx.porOcup)}. Horario: ${ctx.primero?.hora||'?'} a ${ctx.ultimo?.hora||'?'}.
+Da un RESUMEN breve (3-4 líneas). Luego escribe "Recomendaciones:" y da 2-3 recomendaciones específicas. Sin emojis excesivos, tono profesional.`;
+  const txt = await _iaConsultar(prompt,'ia-resumen-dia');
+  if (!txt) { elRes.innerHTML='<em style="color:#d32f2f;">Sin respuesta. Intenta más tarde.</em>'; return; }
+  const partes = txt.split(/Recomendaciones?:/i);
+  elRes.innerHTML=`<p style="line-height:1.6;">${(partes[0]||txt).trim().replace(/\n/g,'<br>')}</p>`;
+  elRec.innerHTML = partes[1]
+    ? `<p style="line-height:1.6;">${partes[1].trim().replace(/\n/g,'<br>')}</p>`
+    : '<em style="color:#bbb;">Sin recomendaciones adicionales.</em>';
+}
+
+async function iaResumenAyer() {
+  const ayer=new Date(); ayer.setDate(ayer.getDate()-1);
+  await iaGenerarResumen(ayer.toISOString().split('T')[0]);
+}
+
+async function iaEnviarConsulta() {
+  const inp = document.getElementById('ia-consulta-input');
+  const pregunta = (inp.value||'').trim();
+  if (!pregunta) return;
+  const ctx = iaObtenerContexto(hoy());
+  let info = ctx ? `Hoy: ${ctx.total} registros. Rutas: ${JSON.stringify(ctx.porRuta)}. Horario: ${ctx.primero?.hora||'?'} a ${ctx.ultimo?.hora||'?'}.` : 'Sin registros hoy.';
+  const prompt=`Eres Minpao, asistente profesional para inspectores de buses en Lima. ${info} El inspector pregunta: ${pregunta}. Responde breve y claro (máximo 3 frases).`;
+  const elResp = document.getElementById('ia-respuesta');
+  elResp.style.display='block';
+  const txt = await _iaConsultar(prompt,'ia-respuesta');
+  elResp.innerHTML = txt ? txt.replace(/\n/g,'<br>') : '<em style="color:#d32f2f;">Sin respuesta.</em>';
+  inp.value='';
+}
 
 
 /* ══════════════════════════════════════════════════════════════

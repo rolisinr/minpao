@@ -694,9 +694,8 @@ function crearReconocimiento() {
     if (/bateria|pila|carga/.test(textoNorm)) { responderBateria(); return; }
     if (/cuanto (tiempo|falta)|tiempo restante|cuanto queda/.test(textoNorm)) { responderTiempoRestante(); return; }
     if (/ultimo (padron|registro|bus)|cual fue el ultimo/.test(textoNorm)) { responderUltimoPadron(); return; }
-    if (/editar (ultimo|el ultimo|anterior)|ultimo registro|editar registro/.test(textoNorm)) {
-      // Si dice "editar último registro ruta 336" o "editar último código 3", pasar el resto
-      const restoFrase = textoNorm.replace(/editar (ultimo|el ultimo|anterior)|ultimo registro|editar registro/,'').trim();
+    if (/modificar|corregir bus|cambiar ultimo|cambiar el ultimo/.test(textoNorm)) {
+      const restoFrase = textoNorm.replace(/modificar|corregir bus|cambiar ultimo|cambiar el ultimo/,'').trim();
       corregirUltimoRegistro(restoFrase || null);
       return;
     }
