@@ -1438,14 +1438,59 @@ body.es-admin .solo-admin.flex{display:flex !important;}
     </button>
   </div>
 
-  <!-- Próximamente -->
-  <div class="card" style="opacity:.6;">
-    <h3>🚀 Próximamente</h3>
-    <p style="font-size:12px;color:#999;">
-      Análisis inteligente de registros · Resúmenes automáticos del día ·
-      Detección de patrones · Consultas avanzadas por voz ·
-      Modo conversacional
+  <!-- Resumen del día -->
+  <div class="card">
+    <h3>📊 Resumen del día</h3>
+    <div id="ia-resumen-dia" style="font-size:13px;color:#666;min-height:40px;">
+      <em style="color:#bbb;">Toca "Generar resumen" para analizar tus registros de hoy.</em>
+    </div>
+    <div style="display:flex;gap:6px;margin-top:10px;">
+      <button class="btn-admin-tab activo" onclick="iaGenerarResumen()" style="flex:1;padding:10px;">
+        ✨ Generar resumen
+      </button>
+      <button class="btn-admin-tab" onclick="iaResumenAyer()" style="flex:1;padding:10px;">
+        📅 Ver ayer
+      </button>
+    </div>
+  </div>
+
+  <!-- Estadísticas por ruta -->
+  <div class="card">
+    <h3>📈 Estadísticas de hoy</h3>
+    <div id="ia-stats-hoy" style="font-size:13px;">
+      <em style="color:#bbb;">Sin registros aún.</em>
+    </div>
+    <button class="btn-admin-tab" onclick="iaActualizarStats()" style="width:100%;padding:10px;margin-top:10px;">
+      🔄 Actualizar estadísticas
+    </button>
+  </div>
+
+  <!-- Consulta libre con IA -->
+  <div class="card">
+    <h3>💬 Consultar a Minpao IA</h3>
+    <p style="font-size:12px;color:#666;margin-bottom:8px;">
+      Haz cualquier pregunta sobre tus registros, la app o tu turno.
     </p>
+    <div style="display:flex;gap:6px;">
+      <input type="text" id="ia-consulta-input"
+        placeholder="Ej: ¿Cuántos buses de la 301 registré?"
+        style="flex:1;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px;"
+        onkeydown="if(event.key==='Enter')iaEnviarConsulta()"/>
+      <button class="btn-admin-tab activo" onclick="iaEnviarConsulta()" style="padding:8px 14px;">
+        ➤
+      </button>
+    </div>
+    <div id="ia-respuesta" style="margin-top:10px;font-size:13px;color:#333;min-height:30px;
+      background:#f8f9ff;border-radius:8px;padding:8px;display:none;">
+    </div>
+  </div>
+
+  <!-- Recomendaciones -->
+  <div class="card">
+    <h3>💡 Recomendaciones</h3>
+    <div id="ia-recomendaciones" style="font-size:13px;color:#666;min-height:40px;">
+      <em style="color:#bbb;">Genera un resumen para ver recomendaciones personalizadas.</em>
+    </div>
   </div>
 
 </div>
@@ -6698,6 +6743,187 @@ async function probarConexionGemini(){
 
 // Inicializar estado de IA al cargar
 setTimeout(actualizarEstadoIA, 500);
+
+/* ══ PÁGINA IA — Funciones de análisis y consulta ══ */
+
+function iaObtenerContextoCompleto(fechaStr) {
+  fechaStr = fechaStr || hoy();
+  const regs = dbDelUsuario().filter(r => r.fecha === fechaStr);
+  if (!regs.length) return null;
+
+  const rutasCount = {};
+  const ocupCount = {};
+  regs.forEach(r => {
+    rutasCount[r.ruta] = (rutasCount[r.ruta]||0) + 1;
+    ocupCount[r.ocupacion] = (ocupCount[r.ocupacion]||0) + 1;
+  });
+
+  return {
+    fecha: fechaStr,
+    total: regs.length,
+    porRuta: rutasCount,
+    porOcupacion: ocupCount,
+    primero: regs[0],
+    ultimo: regs[regs.length-1],
+    registros: regs,
+  };
+}
+
+function iaRenderStats(ctx, contenedorId) {
+  const el = document.getElementById(contenedorId);
+  if (!ctx) { el.innerHTML = '<em style="color:#bbb;">Sin registros para esta fecha.</em>'; return; }
+
+  const rutasHtml = Object.entries(ctx.porRuta)
+    .sort((a,b) => b[1]-a[1])
+    .map(([r,c]) => `
+      <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f0f0f0;">
+        <span style="font-weight:600;color:var(--azul);">${r}</span>
+        <span>${c} bus${c>1?'es':''}</span>
+      </div>`).join('');
+
+  const ocpHtml = Object.entries(ctx.porOcupacion)
+    .sort((a,b) => b[1]-a[1])
+    .map(([o,c]) => `<span style="background:#e3f2fd;border-radius:10px;padding:2px 8px;font-size:11px;">${o}: ${c}</span>`)
+    .join(' ');
+
+  el.innerHTML = `
+    <div style="margin-bottom:8px;">
+      <strong>${ctx.total}</strong> registros · ${ctx.fecha === hoy() ? 'Hoy' : ctx.fecha}
+      ${ctx.primero ? `<span style="color:#999;font-size:11px;"> · ${ctx.primero.hora||''} – ${ctx.ultimo.hora||''}</span>` : ''}
+    </div>
+    <div style="margin-bottom:8px;">${rutasHtml}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:4px;">${ocpHtml}</div>`;
+}
+
+function iaActualizarStats() {
+  const ctx = iaObtenerContextoCompleto(hoy());
+  iaRenderStats(ctx, 'ia-stats-hoy');
+}
+
+async function iaGenerarResumen(fechaStr) {
+  fechaStr = fechaStr || hoy();
+  const key = localStorage.getItem('minpao_gemini_key')||'';
+  if (!key) { toast('⚠️ Configura la clave de IA primero', 'rojo'); return; }
+
+  const ctx = iaObtenerContextoCompleto(fechaStr);
+  const el = document.getElementById('ia-resumen-dia');
+  const elRec = document.getElementById('ia-recomendaciones');
+
+  if (!ctx) {
+    el.innerHTML = '<em style="color:#bbb;">Sin registros para analizar.</em>';
+    return;
+  }
+
+  el.innerHTML = '<em style="color:#999;">🤖 Analizando...</em>';
+  elRec.innerHTML = '<em style="color:#999;">🤖 Generando recomendaciones...</em>';
+
+  // Actualizar stats también
+  iaRenderStats(ctx, 'ia-stats-hoy');
+
+  const prompt = `Eres Minpao, asistente de campo para inspectores de buses en Lima.
+Analiza estos datos del turno del ${fechaStr === hoy() ? 'día de hoy' : fechaStr}:
+- Total de registros: ${ctx.total}
+- Por ruta: ${JSON.stringify(ctx.porRuta)}
+- Por ocupación: ${JSON.stringify(ctx.porOcupacion)}
+- Horario: ${ctx.primero?.hora||'?'} a ${ctx.ultimo?.hora||'?'}
+
+Primero da un RESUMEN breve y claro del turno (3-4 líneas máximo).
+Luego, en una sección separada con el título "Recomendaciones:", da 2-3 recomendaciones específicas y útiles basadas en los datos.
+Sin emojis excesivos, tono profesional.`;
+
+  try {
+    const modelos = ['gemini-3-flash','gemini-3.1-flash-lite','gemini-2.5-flash-lite','gemini-2.5-flash'];
+    for (const modelo of modelos) {
+      const resp = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${key}`,
+        { method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({contents:[{parts:[{text:prompt}]}], generationConfig:{maxOutputTokens:300}}) }
+      );
+      const data = await resp.json();
+      if (data?.error?.code === 429) continue;
+      const txt = data?.candidates?.[0]?.content?.parts?.[0]?.text||'';
+      if (!txt) continue;
+
+      // Separar resumen de recomendaciones
+      const partes = txt.split(/Recomendaciones?:/i);
+      el.innerHTML = `<p style="line-height:1.6;">${(partes[0]||txt).trim().replace(/\n/g,'<br>')}</p>`;
+      if (partes[1]) {
+        elRec.innerHTML = `<p style="line-height:1.6;">${partes[1].trim().replace(/\n/g,'<br>')}</p>`;
+      } else {
+        elRec.innerHTML = '<em style="color:#bbb;">Sin recomendaciones adicionales.</em>';
+      }
+      return;
+    }
+    el.innerHTML = '<em style="color:#d32f2f;">No se pudo obtener respuesta. Intenta más tarde.</em>';
+  } catch(e) {
+    el.innerHTML = '<em style="color:#d32f2f;">Error de conexión.</em>';
+  }
+}
+
+async function iaResumenAyer() {
+  const ayer = new Date(); ayer.setDate(ayer.getDate()-1);
+  const ayerStr = ayer.toISOString().split('T')[0];
+  await iaGenerarResumen(ayerStr);
+}
+
+async function iaEnviarConsulta() {
+  const inp = document.getElementById('ia-consulta-input');
+  const pregunta = (inp.value||'').trim();
+  if (!pregunta) return;
+
+  const key = localStorage.getItem('minpao_gemini_key')||'';
+  if (!key) { toast('⚠️ Configura la clave de IA primero', 'rojo'); return; }
+
+  const elResp = document.getElementById('ia-respuesta');
+  elResp.style.display = 'block';
+  elResp.innerHTML = '<em style="color:#999;">🤖 Pensando...</em>';
+
+  // Contexto completo
+  const ctx = iaObtenerContextoCompleto(hoy());
+  let contextoTexto = 'Datos de hoy: ';
+  if (ctx) {
+    contextoTexto += `${ctx.total} registros. Por ruta: ${JSON.stringify(ctx.porRuta)}. `;
+    contextoTexto += `Horario: ${ctx.primero?.hora||'?'} a ${ctx.ultimo?.hora||'?'}. `;
+  } else {
+    contextoTexto += 'Sin registros hoy. ';
+  }
+
+  const prompt = `Eres Minpao, asistente profesional para inspectores de buses en Lima. ${contextoTexto}
+El inspector pregunta: ${pregunta}
+Responde de forma breve, clara y útil (máximo 3 frases).`;
+
+  try {
+    const modelos = ['gemini-3-flash','gemini-3.1-flash-lite','gemini-2.5-flash-lite','gemini-2.5-flash'];
+    for (const modelo of modelos) {
+      const resp = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${key}`,
+        { method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({contents:[{parts:[{text:prompt}]}], generationConfig:{maxOutputTokens:200}}) }
+      );
+      const data = await resp.json();
+      if (data?.error?.code === 429) continue;
+      const txt = data?.candidates?.[0]?.content?.parts?.[0]?.text||'';
+      if (!txt) continue;
+      elResp.innerHTML = txt.replace(/\n/g,'<br>');
+      inp.value = '';
+      return;
+    }
+    elResp.innerHTML = '<em style="color:#d32f2f;">Sin respuesta. Intenta más tarde.</em>';
+  } catch(e) {
+    elResp.innerHTML = '<em style="color:#d32f2f;">Error de conexión.</em>';
+  }
+}
+
+// Actualizar stats automáticamente al entrar a la página IA
+const _irAOriginal = window.irA;
+document.addEventListener('DOMContentLoaded', () => {
+  const navBtns = document.querySelectorAll('.nav-tab');
+  navBtns.forEach(btn => {
+    if (btn.textContent.includes('IA')) {
+      btn.addEventListener('click', () => setTimeout(iaActualizarStats, 200));
+    }
+  });
+});
 
 
 /* ══════════════════════════════════════════════════════════════
