@@ -1023,8 +1023,8 @@ body.es-admin .solo-admin.flex{display:flex !important;}
     <div class="cov-mini">
       <strong>—</strong>
       <span>Datos del turno</span>
-      <div class="f" id="horaFecha" style="margin-top:2px;">--</div>
-      <div class="acciones-cov" style="margin-top:4px;">
+      <div id="horaFecha" style="font-size:11px;color:#999;margin-top:3px;">--</div>
+      <div class="acciones-cov" style="margin-top:5px;">
         <button onclick="abrirModalCOV(true)">✏️ COV</button>
       </div>
     </div>
@@ -1041,10 +1041,8 @@ body.es-admin .solo-admin.flex{display:flex !important;}
         </div>
       </div>
       <div id="hora-fecha-wrap">
-        <div class="h" id="horaDisplay">--:--</div>
+        <span id="horaDisplay" style="display:none;">--:--</span>
       </div>
-    </div>
-  </div>
 
   <!-- FILA 2: RUTAS + OCUPACIÓN (paralelo 2fr/3fr) -->
   <div class="fila-ruta-occ">
@@ -1085,7 +1083,7 @@ body.es-admin .solo-admin.flex{display:flex !important;}
     <div class="cols2">
       <div class="field">
         <label>Padrón</label>
-        <input type="text" id="f-padron" inputmode="numeric" pattern="[0-9]*" placeholder="Ej: 12345" autocomplete="off" oninput="onPadronInput(this)" onfocus="setTimeout(()=>{const el=document.getElementById('f-padron');if(el)el.scrollIntoView({behavior:'smooth',block:'center'});},350)"/>
+        <input type="text" id="f-padron" inputmode="numeric" pattern="[0-9]*" placeholder="Ej: 12345" autocomplete="off" oninput="onPadronInput(this)" onfocus="setTimeout(()=>{const el=document.querySelector('.fila-ruta-occ');if(el)el.scrollIntoView({behavior:'smooth',block:'start'});},300)"/>
         <div class="padron-hint" id="padron-hint"></div>
       </div>
       <div class="field">
@@ -5456,8 +5454,8 @@ function renderBannerCOV(d){
       <strong>${nombreUsuario}</strong>
       <span>📍 ${paradero}</span>
       <span>↔️ ${sentido}</span>
-      <div class="f" id="horaFecha" style="margin-top:2px;">--</div>
-      <div class="acciones-cov" style="margin-top:4px;">
+      <div id="horaFecha" style="font-size:11px;color:#999;margin-top:3px;">--</div>
+      <div class="acciones-cov" style="margin-top:5px;">
         <button onclick="abrirModalCOV(true)">✏️ COV</button>
       </div>
     </div>
@@ -5474,7 +5472,7 @@ function renderBannerCOV(d){
         </div>
       </div>
       <div id="hora-fecha-wrap">
-        <div class="h" id="horaDisplay">--:--</div>
+        <span id="horaDisplay" style="display:none;">--:--</span>
       </div>
     </div>`;
   tickHora();
